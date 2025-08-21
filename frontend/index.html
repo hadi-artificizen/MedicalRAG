@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Medical RAG Chatbot</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <h2>Medical RAG Chatbot</h2>
+
+    <!-- Auth -->
+    <div id="auth-section">
+      <div id="auth-forms">
+        <label>Email:</label>
+        <input type="email" id="email" placeholder="Enter your email"/>
+        <label>Password:</label>
+        <input type="password" id="password" placeholder="Enter your password"/>
+        <div>
+          <label><input type="radio" name="auth" value="login" checked> Login</label>
+          <label><input type="radio" name="auth" value="signup"> Signup</label>
+        </div>
+        <button id="auth-btn">Login</button>
+        <div id="auth-msg" class="notification"></div>
+      </div>
+      <div id="user-info" hidden>
+        <div><b>Logged in as:</b> <span id="user-email"></span></div>
+        <button id="logout">Logout</button>
+      </div>
+    </div>
+
+    <hr/>
+    <!-- Chatrooms -->
+    <div id="chatroom-section" hidden>
+      <h3>Your Chatrooms</h3>
+      <select id="chatroom"></select>
+      <button id="new-chatroom">New Chatroom</button>
+      <div id="chatroom-msg" class="notification"></div>
+    </div>
+
+    <hr/>
+    <!-- Upload -->
+    <div id="upload-section" hidden>
+      <h3>Document Upload</h3>
+      <input type="file" id="file-upload" multiple accept=".pdf,.docx,.csv,.png,.jpg,.jpeg"/>
+      <button id="upload-btn">Process</button>
+      <div id="upload-msg" class="notification"></div>
+    </div>
+  </aside>
+
+  <!-- Chat -->
+  <main class="main">
+    <header id="chat-header">Please log in to start chatting</header>
+    <div id="chat-box" class="chat-container"></div>
+    <div id="chat-inputs" class="chat-input-container" hidden>
+      <input id="chat-input" class="chat-input" placeholder="Ask your medical question..."/>
+      <button id="send">Send</button>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
