@@ -153,7 +153,7 @@ if st.session_state.user_email and st.session_state.access_token:
     st.sidebar.subheader(" Document Upload")
     uploaded_files = st.sidebar.file_uploader(
         "Upload medical documents",
-        type=[".pdf", ".docx", ".csv", ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".mp4"],
+        type=[".pdf", ".docx", ".csv", ".png", ".jpg", ".jpeg", ".mp4", ".mp3"],
         accept_multiple_files=True
     )
 
@@ -254,7 +254,7 @@ if st.session_state.user_email and st.session_state.chatroom_id and st.session_s
                             elif res.ok:
                                 data= res.json()
                                 full_response = data.get("answer", "")
-                                response_placeholder.markdown(data)
+                                response_placeholder.markdown(full_response)
 
 
                                 if data.get("email_sent"):
