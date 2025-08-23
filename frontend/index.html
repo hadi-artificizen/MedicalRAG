@@ -358,7 +358,8 @@ h4 {
                 const response = await fetch(`${BACKEND_URL}${endpoint}`, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'ngrok-skip-browser-warning': 'true'
                     },
                     body: JSON.stringify({ email, password })
                 });
@@ -439,7 +440,8 @@ h4 {
                 const response = await fetch(`${BACKEND_URL}/upload`, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${currentUser.accessToken}`
+                        'Authorization': `Bearer ${currentUser.accessToken}`,
+                        'ngrok-skip-browser-warning': 'true'
                     },
                     body: formData
                 });
@@ -478,7 +480,8 @@ h4 {
             try {
                 const response = await fetch(`${BACKEND_URL}/chatrooms/${currentUser.email}`, {
                     headers: {
-                        'Authorization': `Bearer ${currentUser.accessToken}`
+                        'Authorization': `Bearer ${currentUser.accessToken}`,
+                        'ngrok-skip-browser-warning': 'true'
                     }
                 });
                 
@@ -522,7 +525,8 @@ h4 {
                 const response = await fetch(`${BACKEND_URL}/new_chatroom/${currentUser.email}`, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${currentUser.accessToken}`
+                        'Authorization': `Bearer ${currentUser.accessToken}`,
+                        'ngrok-skip-browser-warning': 'true'
                     }
                 });
                 
@@ -564,7 +568,8 @@ h4 {
             try {
                 const response = await fetch(`${BACKEND_URL}/messages/${currentUser.chatroomId}`, {
                     headers: {
-                        'Authorization': `Bearer ${currentUser.accessToken}`
+                        'Authorization': `Bearer ${currentUser.accessToken}`,
+                        'ngrok-skip-browser-warning': 'true'
                     }
                 });
                 
@@ -648,7 +653,8 @@ h4 {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${currentUser.accessToken}`
+                        'Authorization': `Bearer ${currentUser.accessToken}`,
+                        'ngrok-skip-browser-warning': 'true'
                     },
                     body: JSON.stringify({
                         email: currentUser.email,
