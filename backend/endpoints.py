@@ -3,10 +3,13 @@ from pydantic import BaseModel
 from typing import List
 from functions import (
     hash_password, verify_password, send_email, get_vectorstore, 
-    contains_prescription, refine_query, load_docs_from_file, conn, cur
+    contains_prescription, load_docs_from_file, conn, cur
 )
 from jwt_handler import verify_token
 from datetime import datetime
+import os
+import tempfile
+import shutil
 
 router = APIRouter()
 
@@ -99,15 +102,13 @@ def new_chatroom(email: str, current_user: str = Depends(verify_token)):
 
 @router.post("/upload")
 async def upload_documents(files: List[UploadFile] = File(...), current_user: str = Depends(verify_token)):
-    import os
-    import tempfile
-    import shutil
+    
     if not files:
         raise HTTPException(400, "No files provided")
     vs, results = get_vectorstore(), []
     for uf in files:
         ext = os.path.splitext(uf.filename.lower())[1]
-        if ext not in [".pdf", ".docx", ".csv", ".png", ".jpg", ".jpeg", ".gif", ".bmp"]:
+        if ext not in [".pdf", ".docx", ".csv", ".png", ".jpg", ".jpeg", ".gif", ".mp4", ".mp3"]:
             results.append({"filename": uf.filename, "status": "unsupported", "chunks_count": 0})
             continue
         tmp_path = None
@@ -145,7 +146,7 @@ async def query_documents(req: QueryRequest, current_user: str = Depends(verify_
         raise HTTPException(400, "Query too short")
 
     vs = get_vectorstore()
-    refined = refine_query(q)
+    refined = (req.Query)
     docs = vs.similarity_search(refined, k=5)
     if not docs:
         return {"answer": "No relevant info.", "sources": []}

@@ -6,7 +6,7 @@ from jose import JWTError, jwt
 
 JWT_SECRET_KEY = "medicalchatbotsecretkey"
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRE_HOURS = 0.1
+JWT_EXPIRE_HOURS = 1
 
 security = HTTPBearer()
 

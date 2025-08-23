@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader, CSVLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import Chroma
 from langchain.schema import Document
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
@@ -20,7 +20,7 @@ import pytesseract
 from PIL import Image
 import whisper
 from moviepy.editor import VideoFileClip
-
+from pydub import AudioSegment
 load_dotenv()
 
 
@@ -29,7 +29,7 @@ conn = psycopg2.connect(DB_URL)
 cur = conn.cursor()
 
 
-splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
+splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=100)
 
 
 chat_llm = ChatOpenAI(
@@ -78,7 +78,7 @@ def get_embeddings():
     )
 
 def get_vectorstore():
-    return Chroma(embeddings_functions=get_embeddings(), persist_directory=PERSIST_DIR)
+    return Chroma(embedding_function=get_embeddings(), persist_directory=PERSIST_DIR)
 
 def contains_prescription(text: str) -> bool:
     return any(re.search(p, text, re.IGNORECASE) for p in [
@@ -87,15 +87,7 @@ def contains_prescription(text: str) -> bool:
         "twice.*day", "once.*day", "three.*times"
     ])
 
-def refine_query(original_query: str) -> str:
-    prompt = ("You are a query rewriting assistant for a medical retrieval system. "
-              "Rewrite the user's query clearly. If vague, expand. If single-word, "
-              "make it a medical question. Keep only the query.")
-    resp = chat_llm.invoke([
-        SystemMessage(content=prompt),
-        HumanMessage(content=f"Original query: {original_query}")
-    ])
-    return resp.content.strip()
+
 
 def load_docs_from_file(tmp_path: str, ext: str, source: str) -> List[Document]:
     meta = {"source": source, "processed_date": datetime.now().isoformat()}
@@ -119,13 +111,22 @@ def load_docs_from_file(tmp_path: str, ext: str, source: str) -> List[Document]:
         except Exception as e:
             print(f"OCR failed for {source}: {e}")
             return []
-    elif ext == ".mp4":
+    elif ext in [".mp4", ".mp3"]:
         try:
+            print(f"Processing audio/video file: {source}")
+            base, _ = os.path.splitext(tmp_path)
+            audio_path = base + "_audio.wav"
+            if ext == ".mp4":
+                video = VideoFileClip(tmp_path)
+                audio_path = tmp_path.replace(".mp4", "_audio.wav")
+                video.audio.write_audiofile(audio_path)
+                video.close()
             
-            video = VideoFileClip(tmp_path)
-            audio_path = tmp_path.replace(".mp4", "_audio.wav")
-            video.audio.write_audiofile(audio_path)
-            video.close() 
+            elif ext == ".mp3":
+                audio = AudioSegment.from_file(tmp_path, format="mp3")  
+                audio_path = tmp_path.replace(".mp3", "_audio.wav")
+                audio.export(audio_path, format="wav")               
+
 
             model = whisper.load_model("base") 
             transcription = model.transcribe(audio_path)

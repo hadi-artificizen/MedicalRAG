@@ -1,64 +1,687 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Medical RAG Chatbot</title>
-  <link rel="stylesheet" href="style.css">
+  <style>
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  display: flex;
+  height: 100vh;
+}
+
+#sidebar {
+  width: 220px;
+  background: #333;
+  color: #fff;
+  padding: 10px;
+  font-size: 14px;
+}
+
+#sidebar h2 {
+  font-size: 18px;
+  text-align: center;
+  margin-bottom: 15px;
+}
+
+button, input {
+  font-size: 14px;
+  padding: 6px;
+  margin: 5px 0;
+  width: 100%;
+  border: 1px solid #aaa;
+  background: #eee;
+  box-sizing: border-box;
+}
+
+button {
+  background: #007bff;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+button:disabled {
+  background: #aaa;
+  cursor: not-allowed;
+}
+
+button:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+#chatrooms-list div {
+  padding: 6px;
+  margin: 4px 0;
+  background: #444;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+#chatrooms-list div:hover {
+  background: #555;
+}
+
+#chatrooms-list div.active {
+  background: #666;
+}
+
+.chatroom-item.active {
+  background: #007bff !important;
+}
+
+#main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+#welcome-screen {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  background: #f8f9fa;
+}
+
+#welcome-screen h1 {
+  color: #333;
+  margin-bottom: 10px;
+}
+
+#welcome-screen p {
+  color: #666;
+}
+
+#chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+#messages-container {
+  flex: 1;
+  padding: 10px;
+  overflow-y: auto;
+  background: #f0f0f0;
+}
+
+.message {
+  margin-bottom: 15px;
+  max-width: 70%;
+  clear: both;
+}
+
+.message-label {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.user-message {
+  float: right;
+  text-align: right;
+}
+
+.user-message .message-content {
+  background: #007bff;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 18px;
+  display: inline-block;
+  word-wrap: break-word;
+}
+
+.assistant-message {
+  float: left;
+}
+
+.assistant-message .message-content {
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 8px 12px;
+  border-radius: 18px;
+  display: inline-block;
+  word-wrap: break-word;
+}
+
+.prescription-alert {
+  background: #28a745;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-top: 5px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.chat-input-container {
+  border-top: 1px solid #ccc;
+  padding: 8px;
+  background: white;
+  min-width: 100px;
+}
+
+#chat-input {
+  
+  padding: 12px 16px;
+  font-size: 15px;
+  border: 2px solid #ddd;
+  border-radius: 25px;
+  outline: none;
+  background: #f8f9fa;
+  min-height: 20px;
+  transition: border-color 0.3s ease;
+}
+
+#chat-input:focus {
+  border-color: #007bff;
+  background: white;
+}
+
+#send-btn {
+  padding: 12px;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 25px;
+  font-weight: 500;
+  min-width: 10px;
+  flex:1
+}
+
+
+#auth-message {
+  margin-top: 10px;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+#auth-message.success {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+#auth-message.error {
+  background: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+}
+
+#upload-status {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+#upload-status .success {
+  color: #28a745;
+  margin: 2px 0;
+}
+
+#upload-status .error {
+  color: #dc3545;
+  margin: 2px 0;
+}
+
+
+h4 {
+  margin: 15px 0 8px 0;
+  color: #ccc;
+  font-size: 14px;
+}
+  </style>
 </head>
 <body>
-  <aside class="sidebar">
-    <h2>Medical RAG Chatbot</h2>
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <h2>Medical RAG</h2>
 
-    <!-- Auth -->
     <div id="auth-section">
-      <div id="auth-forms">
-        <label>Email:</label>
-        <input type="email" id="email" placeholder="Enter your email"/>
-        <label>Password:</label>
-        <input type="password" id="password" placeholder="Enter your password"/>
-        <div>
-          <label><input type="radio" name="auth" value="login" checked> Login</label>
-          <label><input type="radio" name="auth" value="signup"> Signup</label>
-        </div>
-        <button id="auth-btn">Login</button>
-        <div id="auth-msg" class="notification"></div>
+      <p>Email:</p>
+      <input type="email" id="auth-email" placeholder="Enter your email">
+      <p>Password:</p>
+      <input type="password" id="auth-password" placeholder="Enter password">
+      <button id="auth-submit">Login</button>
+      <button id="signup-btn">Signup</button>
+      <div id="auth-message"></div>
+    </div>
+
+    <div id="user-section" style="display:none;">
+      <p>Logged in as <span id="user-email"></span></p>
+      <button id="logout-btn">Logout</button>
+
+      <h4>Upload Docs</h4>
+      <input type="file" id="file-upload" multiple>
+      <button id="upload-btn">Upload</button>
+      <div id="upload-status"></div>
+
+      <h4>Chatrooms</h4>
+      <button id="new-chatroom-btn">+ New</button>
+      <div id="chatrooms-list"></div>
+    </div>
+  </div>
+
+  <!-- Main Chat Area -->
+  <div id="main-content">
+    <div id="welcome-screen">
+      <h1>Medical RAG Chatbot</h1>
+      <p>Please login to start.</p>
+    </div>
+
+    <div id="chat-container" style="display:none;">
+      <div style="padding:10px; border-bottom:1px solid #ccc; background: white;">
+        <h3 id="chat-title">Chat - Chatroom #</h3>
       </div>
-      <div id="user-info" hidden>
-        <div><b>Logged in as:</b> <span id="user-email"></span></div>
-        <button id="logout">Logout</button>
+      <div id="messages-container"></div>
+      <div class="chat-input-container">
+        <input type="text" id="chat-input" placeholder="Ask your question...">
+        <button id="send-btn">Send</button>
       </div>
     </div>
+  </div>
 
-    <hr/>
-    <!-- Chatrooms -->
-    <div id="chatroom-section" hidden>
-      <h3>Your Chatrooms</h3>
-      <select id="chatroom"></select>
-      <button id="new-chatroom">New Chatroom</button>
-      <div id="chatroom-msg" class="notification"></div>
-    </div>
+  <script>
+        const BACKEND_URL = "http://localhost:8000";
 
-    <hr/>
-    <!-- Upload -->
-    <div id="upload-section" hidden>
-      <h3>Document Upload</h3>
-      <input type="file" id="file-upload" multiple accept=".pdf,.docx,.csv,.png,.jpg,.jpeg"/>
-      <button id="upload-btn">Process</button>
-      <div id="upload-msg" class="notification"></div>
-    </div>
-  </aside>
+        // Global state
+        let currentUser = {
+            email: null,
+            accessToken: null,
+            chatroomId: null
+        };
 
-  <!-- Chat -->
-  <main class="main">
-    <header id="chat-header">Please log in to start chatting</header>
-    <div id="chat-box" class="chat-container"></div>
-    <div id="chat-inputs" class="chat-input-container" hidden>
-      <input id="chat-input" class="chat-input" placeholder="Ask your medical question..."/>
-      <button id="send">Send</button>
-    </div>
-  </main>
+        let isLoginMode = true;
 
-  <script src="app.js"></script>
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            setupEventListeners();
+            
+            // Check if user was previously logged in
+            const savedToken = localStorage.getItem('accessToken');
+            const savedEmail = localStorage.getItem('userEmail');
+            
+            if (savedToken && savedEmail) {
+                currentUser.accessToken = savedToken;
+                currentUser.email = savedEmail;
+                showUserInterface();
+                loadChatrooms();
+            }
+        });
+
+        function setupEventListeners() {
+            // Fixed: removed references to non-existent login/signup tabs
+            document.getElementById('auth-submit').addEventListener('click', handleAuth);
+            document.getElementById('signup-btn').addEventListener('click', () => {
+                isLoginMode = !isLoginMode;
+                document.getElementById('auth-submit').textContent = isLoginMode ? 'Login' : 'Sign Up';
+                document.getElementById('signup-btn').textContent = isLoginMode ? 'Signup' : 'Back to Login';
+                clearAuthMessage();
+            });
+            document.getElementById('logout-btn').addEventListener('click', logout);
+            document.getElementById('upload-btn').addEventListener('click', handleUpload);
+            document.getElementById('new-chatroom-btn').addEventListener('click', createNewChatroom);
+            document.getElementById('send-btn').addEventListener('click', sendMessage);
+            document.getElementById('chat-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') sendMessage();
+            });
+        }
+
+        function showAuthMessage(message, isError = false) {
+            const authMessage = document.getElementById('auth-message');
+            authMessage.textContent = message;
+            authMessage.className = isError ? 'error' : 'success';
+        }
+
+        function clearAuthMessage() {
+            const authMessage = document.getElementById('auth-message');
+            authMessage.textContent = '';
+            authMessage.className = '';
+        }
+
+        async function handleAuth() {
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+            
+            if (!email || !password) {
+                showAuthMessage('Please enter both email and password', true);
+                return;
+            }
+            
+            try {
+                const endpoint = isLoginMode ? '/login' : '/register';
+                const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (isLoginMode) {
+                        currentUser.accessToken = data.access_token;
+                        currentUser.email = email;
+                        
+                        // Save to localStorage
+                        localStorage.setItem('accessToken', data.access_token);
+                        localStorage.setItem('userEmail', email);
+                        
+                        showAuthMessage('Login successful!');
+                        setTimeout(() => {
+                            showUserInterface();
+                            loadChatrooms();
+                        }, 1000);
+                        
+                    } else {
+                        showAuthMessage('Signup successful! Please login.');
+                        isLoginMode = true;
+                        document.getElementById('auth-submit').textContent = 'Login';
+                        document.getElementById('signup-btn').textContent = 'Signup';
+                        document.getElementById('auth-email').value = '';
+                        document.getElementById('auth-password').value = '';
+                    }
+                } else {
+                    showAuthMessage(data.detail || 'Authentication failed', true);
+                }
+            } catch (error) {
+                showAuthMessage('Network error. Please try again.', true);
+                console.error('Auth error:', error);
+            }
+        }
+
+        function logout() {
+            currentUser = { email: null, accessToken: null, chatroomId: null };
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('userEmail');
+            
+            document.getElementById('auth-section').style.display = 'block';
+            document.getElementById('user-section').style.display = 'none';
+            document.getElementById('welcome-screen').style.display = 'flex';
+            document.getElementById('chat-container').style.display = 'none';
+            
+            document.getElementById('auth-email').value = '';
+            document.getElementById('auth-password').value = '';
+            clearAuthMessage();
+        }
+
+        function showUserInterface() {
+            document.getElementById('auth-section').style.display = 'none';
+            document.getElementById('user-section').style.display = 'block';
+            document.getElementById('welcome-screen').style.display = 'none';
+            document.getElementById('chat-container').style.display = 'flex';
+            
+            document.getElementById('user-email').textContent = currentUser.email;
+        }
+
+        async function handleUpload() {
+            const files = document.getElementById('file-upload').files;
+            if (!files || files.length === 0) {
+                document.getElementById('upload-status').innerHTML = '<div class="error">Please select files to upload</div>';
+                return;
+            }
+            
+            const formData = new FormData();
+            for (let file of files) {
+                formData.append('files', file);
+            }
+            
+            try {
+                document.getElementById('upload-status').innerHTML = '<div>Uploading files...</div>';
+                
+                const response = await fetch(`${BACKEND_URL}/upload`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentUser.accessToken}`
+                    },
+                    body: formData
+                });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    let statusHTML = `<div class="success">✅ ${data.message}</div>`;
+                    if (data.documents) {
+                        data.documents.forEach(doc => {
+                            if (doc.status === 'success') {
+                                statusHTML += `<div class="success">📄 ${doc.filename}: ${doc.chunks_count} chunks</div>`;
+                            } else {
+                                statusHTML += `<div class="error">❌ ${doc.filename}: ${doc.status}</div>`;
+                            }
+                        });
+                    }
+                    document.getElementById('upload-status').innerHTML = statusHTML;
+                } else {
+                    document.getElementById('upload-status').innerHTML = `<div class="error">Upload failed: ${data.detail || response.statusText}</div>`;
+                }
+            } catch (error) {
+                document.getElementById('upload-status').innerHTML = `<div class="error">Upload error: ${error.message}</div>`;
+            }
+            
+            // Clear file input
+            document.getElementById('file-upload').value = '';
+        }
+
+        async function loadChatrooms() {
+            try {
+                const response = await fetch(`${BACKEND_URL}/chatrooms/${currentUser.email}`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentUser.accessToken}`
+                    }
+                });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const chatrooms = data.chatrooms || [];
+                    const chatroomsList = document.getElementById('chatrooms-list');
+                    chatroomsList.innerHTML = '';
+                    
+                    chatrooms.forEach(([id, createdAt]) => {
+                        const chatroomDiv = document.createElement('div');
+                        chatroomDiv.className = 'chatroom-item';
+                        chatroomDiv.textContent = `Chatroom ${id}`;
+                        chatroomDiv.addEventListener('click', () => selectChatroom(id));
+                        
+                        if (id === currentUser.chatroomId) {
+                            chatroomDiv.classList.add('active');
+                        }
+                        
+                        chatroomsList.appendChild(chatroomDiv);
+                    });
+                    
+                    // Select first chatroom if none selected
+                    if (chatrooms.length > 0 && !currentUser.chatroomId) {
+                        selectChatroom(chatrooms[0][0]);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load chatrooms:', error);
+            }
+        }
+
+        async function createNewChatroom() {
+            try {
+                const response = await fetch(`${BACKEND_URL}/new_chatroom/${currentUser.email}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentUser.accessToken}`
+                    }
+                });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    currentUser.chatroomId = data.chatroom_id;
+                    loadChatrooms();
+                    loadMessages();
+                }
+            } catch (error) {
+                console.error('Failed to create chatroom:', error);
+            }
+        }
+
+        function selectChatroom(chatroomId) {
+            currentUser.chatroomId = chatroomId;
+            
+            // Update active chatroom in UI
+            document.querySelectorAll('.chatroom-item').forEach(item => {
+                item.classList.remove('active');
+                if (item.textContent === `Chatroom ${chatroomId}`) {
+                    item.classList.add('active');
+                }
+            });
+            
+            document.getElementById('chat-title').textContent = `Chat - Chatroom #${chatroomId}`;
+            loadMessages();
+        }
+
+        async function loadMessages() {
+            if (!currentUser.chatroomId) return;
+            
+            try {
+                const response = await fetch(`${BACKEND_URL}/messages/${currentUser.chatroomId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentUser.accessToken}`
+                    }
+                });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const messages = data.messages || [];
+                    const messagesContainer = document.getElementById('messages-container');
+                    messagesContainer.innerHTML = '';
+                    
+                    messages.forEach(([userMessage, aiResponse]) => {
+                        if (userMessage) {
+                            addMessage(userMessage, 'user');
+                        }
+                        if (aiResponse) {
+                            addMessage(aiResponse, 'assistant');
+                        }
+                    });
+                    
+                    scrollToBottom();
+                }
+            } catch (error) {
+                console.error('Failed to load messages:', error);
+            }
+        }
+
+        function addMessage(content, type, showPrescriptionAlert = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}-message`;
+            
+            const label = document.createElement('div');
+            label.className = 'message-label';
+            label.textContent = type === 'user' ? 'You' : 'Assistant';
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = content;
+            
+            messageDiv.appendChild(label);
+            messageDiv.appendChild(contentDiv);
+            
+            if (showPrescriptionAlert) {
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'prescription-alert';
+                alertDiv.textContent = 'Prescription sent to your email.';
+                messageDiv.appendChild(alertDiv);
+            }
+            
+            document.getElementById('messages-container').appendChild(messageDiv);
+            scrollToBottom();
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('messages-container');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function sendMessage() {
+            const message = document.getElementById('chat-input').value.trim();
+            if (!message || !currentUser.chatroomId) return;
+            
+            // Disable input while sending
+            const chatInput = document.getElementById('chat-input');
+            const sendBtn = document.getElementById('send-btn');
+            
+            chatInput.disabled = true;
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = 'Sending..';
+            
+            // Add user message immediately
+            addMessage(message, 'user');
+            chatInput.value = '';
+            
+            try {
+                const response = await fetch(`${BACKEND_URL}/query`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${currentUser.accessToken}`
+                    },
+                    body: JSON.stringify({
+                        email: currentUser.email,
+                        chatroom_id: currentUser.chatroomId,
+                        Query: message
+                    })
+                });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const answer = data.answer || 'No response received';
+                    const emailSent = data.email_sent || false;
+                    
+                    addMessage(answer, 'assistant', emailSent);
+                } else {
+                    addMessage(`Error: ${data.detail || 'Failed to get response'}`, 'assistant');
+                }
+            } catch (error) {
+                addMessage(`Error: ${error.message}`, 'assistant');
+            } finally {
+                // Re-enable input
+                chatInput.disabled = false;
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+                chatInput.focus();
+            }
+        }
+    </script>
 </body>
 </html>
