@@ -775,6 +775,9 @@
             
             document.getElementById('messages-container').appendChild(messageDiv);
             scrollToBottom();
+
+           
+            return contentDiv;
         }
 
         function scrollToBottom() {
@@ -783,61 +786,105 @@
         }
 
         async function sendMessage() {
-            const message = document.getElementById('chat-input').value.trim();
-            if (!message || !currentUser.chatroomId) return;
-            
-            // Disable input while sending
-            const chatInput = document.getElementById('chat-input');
-            const sendBtn = document.getElementById('send-btn');
-            
-            chatInput.disabled = true;
-            sendBtn.disabled = true;
-            sendBtn.innerHTML = '<div class="loading"></div>';
-            
-            // Add user message immediately
-            addMessage(message, 'user');
-            chatInput.value = '';
-            
-            try {
-                const response = await fetch(`${BACKEND_URL}/query`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${currentUser.accessToken}`,
-                        'ngrok-skip-browser-warning': 'true'
-                    },
-                    body: JSON.stringify({
-                        email: currentUser.email,
-                        chatroom_id: currentUser.chatroomId,
-                        Query: message
-                    })
-                });
-                
-                if (response.status === 401) {
-                    logout();
-                    return;
-                }
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    const answer = data.answer || 'No response received';
-                    const emailSent = data.email_sent || false;
-                    
-                    addMessage(answer, 'assistant', emailSent);
-                } else {
-                    addMessage(`Error: ${data.detail || 'Failed to get response'}`, 'assistant');
-                }
-            } catch (error) {
-                addMessage(`Error: ${error.message}`, 'assistant');
-            } finally {
-                // Re-enable input
-                chatInput.disabled = false;
-                sendBtn.disabled = false;
-                sendBtn.textContent = 'Send';
-                chatInput.focus();
+        const message = document.getElementById('chat-input').value.trim();
+        if (!message || !currentUser.chatroomId) return;
+
+        // Disable input while sending
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        chatInput.disabled = true;
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '<div class="loading"></div>';
+
+        // Add user message immediately
+        addMessage(message, 'user');
+        chatInput.value = '';
+
+        try {
+            console.log('Sending request...');
+
+            const response = await fetch(`${BACKEND_URL}/query`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${currentUser.accessToken}`,
+                    'ngrok-skip-browser-warning': 'true'
+                },
+                body: JSON.stringify({
+                    email: currentUser.email,
+                    chatroom_id: currentUser.chatroomId,
+                    Query: message
+                })
+            });
+
+            if (response.status === 401) {
+                logout();
+                return;
             }
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                addMessage(`Error: ${errorText || 'Server error'}`, 'assistant');
+                return;
+            }
+
+            // Streaming setup
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullResponse = '';
+
+            // Create initial empty message element
+            let messageElement = addMessage('', 'assistant');
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                let chunk = decoder.decode(value, { stream: true });
+                console.log("Received chunk:", chunk);
+
+                // 🔑 Your backend sends structured events. We need to extract AI text only.
+                try {
+                    // If chunk looks like a JSON object with agent message
+                    if (chunk.includes('"content"')) {
+                        const jsonMatch = chunk.match(/\{.*\}/s);
+                        if (jsonMatch) {
+                            const parsed = JSON.parse(jsonMatch[0]);
+                            if (parsed?.agent?.messages?.[0]?.content) {
+                                chunk = parsed.agent.messages[0].content;
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.warn("JSON parse failed, using raw chunk");
+                }
+
+                // Special case for email event
+                if (chunk.includes('Email sent successfully')) {
+                    chunk = "I've sent the information to your email address.";
+                }
+
+                fullResponse += chunk;
+
+                if (messageElement) {
+                    messageElement.textContent = fullResponse.trim();
+                }
+            }
+
+            console.log('Final response:', fullResponse);
+
+        } catch (error) {
+            console.error('Error:', error);
+            addMessage(`Error: ${error.message}`, 'assistant');
+        } finally {
+            chatInput.disabled = false;
+            sendBtn.disabled = false;
+            sendBtn.textContent = 'Send';
+            chatInput.focus();
         }
+    }
+
     </script>
 </body>
 </html>

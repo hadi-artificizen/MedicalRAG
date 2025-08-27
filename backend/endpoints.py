@@ -2,16 +2,24 @@ from fastapi import APIRouter, File, UploadFile, HTTPException, Depends, status
 from pydantic import BaseModel
 from typing import List
 from functions import (
-    hash_password, verify_password, send_email, get_vectorstore, 
-    contains_prescription, load_docs_from_file, conn, cur
+    hash_password, verify_password, send_email, get_vectorstore, load_docs_from_file, conn, cur, agent, chat_llm,llm_with_tools
 )
 from jwt_handler import verify_token
 from datetime import datetime
+
 import os
 import tempfile
 import shutil
+from langgraph.graph import StateGraph, START, END, MessagesState
+from typing import TypedDict , Optional
+from langgraph.prebuilt import ToolNode, tools_condition
+from fastapi.responses import StreamingResponse
+import json
 
 router = APIRouter()
+
+
+llm_with_tools = chat_llm.bind_tools([send_email])
 
 class RegisterRequest(BaseModel):
     email: str
@@ -131,10 +139,12 @@ async def upload_documents(files: List[UploadFile] = File(...), current_user: st
 
 @router.post("/query")
 async def query_documents(req: QueryRequest, current_user: str = Depends(verify_token)):
-    from functions import chat_llm, SystemMessage, HumanMessage
+    from functions import SystemMessage, HumanMessage
+    import time
+
     if current_user != req.email:
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     cur.execute("SELECT id, email FROM users WHERE email=%s", (req.email,))
     user = cur.fetchone()
     if not user:
@@ -152,20 +162,129 @@ async def query_documents(req: QueryRequest, current_user: str = Depends(verify_
         return {"answer": "No relevant info.", "sources": []}
 
     context = "\n\n".join(f"Doc {i+1}:\n{d.page_content}" for i, d in enumerate(docs))
-    system_msg = ("You are a helpful medical assistant. "
-                  "If you recommend medicine, format as 'Prescription: <name and dosage>'. "
-                  "Answer based ONLY on context. If unknown, say so.")
-    messages = [SystemMessage(content=system_msg), HumanMessage(content=f"Context:\n{context}\n\nQuestion: {q}")]
-    answer = chat_llm.invoke(messages).content
+    system_msg = f"""
+        You are a helpful Medical assistant. You are tasked to answer medical questions
+        ONLY related to the given CONTEXT: {context}.
+        You are allowed to answer greetings like Hello/Hi, but DO NOT answer anything
+        outside the provided context.
+        You have been provided with a tool 'send_email'. If the CONTEXT contains:
+        1. Medicine name, dosage, etc.
+        2. A prescription.
+        Then you MUST call the 'send_email' function with:
+            to_email: {user_email}
+            subject: 'Create a subject according to the query and context'
+            body: 'Create an email body with user query + your answer based on context'
+        After the tool returns Success, respond accordingly.
+        the input you get make a proper tags say preccription output init just write in format the medicine name and dosage '<prescription: the name and the dosage of the medicine you get in the CONTEXT> and name main answer'
+    """
+
+    messages = [SystemMessage(content=system_msg), HumanMessage(content=f"Question: {q}")]
+
+    
+    graph = StateGraph(MessagesState)
+
+    def agent_node(state):
+        return {"messages": [llm_with_tools.invoke(state["messages"])]}
+
+    graph.add_node("agent", agent_node)
+    graph.add_node("tools", ToolNode([send_email]))
+    graph.add_edge(START, "agent")
+    graph.add_conditional_edges("agent", tools_condition)
+    graph.add_edge("tools", "agent")
+
+    builder = graph.compile()
+
+    stream = builder.stream({"messages": messages})
+    full_output=""
+    def give_streaming_response():
+        for event in stream:
+            print(event)
+            full_output=""
+
+            if "agent" in event and "messages" in event["agent"]:
+                message = event["agent"]["messages"][-1]
+
+                
+                if hasattr(message, "additional_kwargs"):
+                    print("Message has additional_kwargs")
+                    if "tool_calls" in message.additional_kwargs:
+                        print("Found tool_calls in additional_kwargs")
+
+                        for tool_call in message.additional_kwargs["tool_calls"]:
+                            print("TOOL CALL:", tool_call)
+
+                            if "function" in tool_call and "arguments" in tool_call["function"]:
+                                print("Found function.arguments")
+
+                                try:
+                                    args = json.loads(tool_call["function"]["arguments"])
+                                    print("Parsed ARGS:", args)
+
+                                    body = args.get("body", "")
+                                    print("Extracted BODY:", body)
+
+                                    if body:
+                                        print(">>> Yielding BODY")
+                                        lines = body.split('\n')
+                                        remaining_content = '\n'.join(lines[1:])
+                                        for chunk in remaining_content:
+                                            yield chunk
+                                            print(chunk)
+                                            full_output+=chunk
+                                except Exception as e: 
+                                    print("Error parsing tool_call args:",e)
+                                    #    lines = body.strip().split('\n')
+                                    # if len(lines) > 2:
+                                    #     second_line = lines[2,3]
+                                    #     print(">>> Second line:", second_line)
+                                        
+                                #     else:
+                                #         print(">>> No second line found")
+
+                                #         yield second_line
+                                #         full_output += second_line
+                                # except Exception as e:
+                                #     print("Error parsing tool_call args:", e)
+
+           
+                    elif hasattr(message, "content") and message.content:
+
+                        yield message.content
+                    else: 
+                        print("Skipping content because prescription already sent")
 
     cur.execute("INSERT INTO chat_threads (chatroom_id, user_message, ai_response) VALUES "
-                "((SELECT id FROM chatrooms WHERE user_id=%s ORDER BY created_at DESC LIMIT 1), %s, %s)", (user_id, q, answer))
+                "((SELECT id FROM chatrooms WHERE user_id=%s ORDER BY created_at DESC LIMIT 1), %s, %s)", (user_id, q, full_output))
     conn.commit()
 
-    prescription_detected = contains_prescription(answer)
-    email_sent = False
-    if prescription_detected:
-        email_sent = send_email(user_email, "Medical Query Response", f"Query: {q}\n\nAnswer:\n{answer}")
+    print("END OF STREAM")
 
-    sources = sorted({d.metadata.get("source", "Unknown") for d in docs})
-    return {"answer": answer, "sources": sources, "email_sent": email_sent}
+
+    return StreamingResponse(give_streaming_response(), media_type="text/plain; charset=utf-8")
+    # def give_streaming_response():
+
+    #         for event in stream:
+    #                     print(event)
+                       
+    #                     if "agent" in event and "messages" in event["agent"]:
+    #                         message = event["agent"]["messages"][-1]
+                    
+                    
+    #                         if hasattr(message, 'content') and message.content:
+                 
+    #                             if not hasattr(message, 'tool_calls') or not message.tool_calls:
+                            
+    #                                 content = message.content
+                                    
+    #                                 if isinstance(content, str):
+    #                                     print(content.encode('utf-8').decode('utf-8'))
+    #                                     yield content.encode('utf-8').decode('utf-8')
+    #                                 else:
+    #                                     print(str(content))
+    #                                     yield str(content)
+                                
+    # return StreamingResponse(give_streaming_response(),media_type="text/plain; charset=utf-8")
+
+    
+
+    

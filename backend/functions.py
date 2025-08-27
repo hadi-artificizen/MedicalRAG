@@ -21,30 +21,28 @@ from PIL import Image
 import whisper
 from moviepy.editor import VideoFileClip
 from pydub import AudioSegment
-load_dotenv()
+from langchain.tools import tool, StructuredTool
+from langchain.agents import initialize_agent, AgentType
+from pydantic import BaseModel, Field
+from typing import TypedDict, Optional
 
+load_dotenv()
 
 DB_URL = os.getenv("DB_URL")
 conn = psycopg2.connect(DB_URL)
 cur = conn.cursor()
 
-
 splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=100)
 
-
 chat_llm = ChatOpenAI(
-    model="openai/gpt-oss-20b",
+    model="openai/gpt-oss-120b",
     temperature=0.5,
     base_url="https://api.groq.com/openai/v1"
 )
 
-
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
 SMTP_USER = "imabdul.hadi1234@gmail.com"
 SMTP_PASSWORD = "gqty jnji ufjq rgrh"
 EMAIL_TIMEOUT = 30
-
 
 PERSIST_DIR = "D:/LangchainPractice/RAG/chroma_db"
 
@@ -54,22 +52,98 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
-def send_email(to_email: str, subject: str, body: str) -> bool:
+def send_email(to_email , subject , body) :
+
+    """Send an email to the given address with subject and body. Call this function for ANY medical query response."""
+    print("Email function called")
     if not to_email or "@" not in to_email:
-        return False
+        return {"success": False, "message": "Invalid email address"}
+    
+    if not body.strip():
+        return {"success": False, "message": "Email body cannot be empty"}
+    
     msg = MIMEMultipart()
     msg["Subject"] = subject
     msg["From"] = SMTP_USER
     msg["To"] = to_email
     msg.attach(MIMEText(body, "plain"))
+    
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=EMAIL_TIMEOUT) as server:
+            print("SMTP connection established")
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.send_message(msg)
-        return True
+        print(f"Email sent successfully to {to_email}")
+        return {"messages" : f"success : True, message : Email sent to {to_email}"}
     except Exception as e:
-        print(f"Email failed: {e}")
-        return False
+        error_msg = f"Email failed: {str(e)}"
+        print(error_msg)
+        return {"messages" : f"success : False, message : {error_msg}"}
+
+class SendEmailInput(BaseModel):
+    to_email: str = Field(default="", description="Recipient email address")
+    subject: str = Field(default="Medical Query Response", description="Subject of the email")
+    body: str = Field(..., description="Body of the email containing the medical response")
+
+send_email_tool = StructuredTool.from_function(
+    func=send_email,
+    name="send_email",
+    description="Send an email with the medical response. ALWAYS call this function after providing any medical advice or response.",
+    args_schema=SendEmailInput
+)
+
+# Initialize agent with explicit instructions
+from langgraph.graph import StateGraph, END
+
+# Bind LLM with the send_email tool
+llm_with_tools = chat_llm.bind_tools([send_email_tool])
+
+class graphState(TypedDict):
+    query : str
+    doc : str
+    mail : Optional[str]
+    email_body : Optional[str]
+    subject : Optional[str]
+# Define graph state (simple dict is fine)
+graph = StateGraph(graphState)
+
+def agent_node(state):
+
+    query = state["query"]
+    doc = state["doc"]
+
+
+
+    # Let LLM respond
+    # response = llm_with_tools.invoke(state["messages"])
+    # state["messages"].append(response)
+
+    # # Check if the model requested a tool
+    # tool_calls = getattr(response, "tool_calls", None)
+    # if tool_calls:
+    #     for tc in tool_calls:
+    #         if tc["name"] == "send_email":
+    #             try:
+    #                 # Parse args
+    #                 args = tc["args"]
+    #                 result = send_email(**args)
+    #                 # Append tool result back into the conversation
+    #                 state["messages"].append(
+    #                     {"role": "tool", "name": "send_email", "content": str(result)}
+    #                 )
+    #             except Exception as e:
+    #                 state["messages"].append(
+    #                     {"role": "tool", "name": "send_email", "content": f"Error: {str(e)}"}
+    #                 )
+    # return state
+
+
+graph.add_node("agent", agent_node)
+graph.set_entry_point("agent")
+graph.add_edge("agent", END)
+
+# Compile graph
+agent = graph.compile()
 
 def get_embeddings():
     return HuggingFaceEmbeddings(
@@ -79,14 +153,6 @@ def get_embeddings():
 
 def get_vectorstore():
     return Chroma(embedding_function=get_embeddings(), persist_directory=PERSIST_DIR)
-
-def contains_prescription(text: str) -> bool:
-    return any(re.search(p, text, re.IGNORECASE) for p in [
-        "Prescription:", "prescribed?", "take.*mg", "dosage", "medicine",
-        "medication", "drug", "tablet", "capsule", "syrup", "inject",
-        "twice.*day", "once.*day", "three.*times"
-    ])
-
 
 
 def load_docs_from_file(tmp_path: str, ext: str, source: str) -> List[Document]:
@@ -127,12 +193,10 @@ def load_docs_from_file(tmp_path: str, ext: str, source: str) -> List[Document]:
                 audio_path = tmp_path.replace(".mp3", "_audio.wav")
                 audio.export(audio_path, format="wav")               
 
-
             model = whisper.load_model("base") 
             transcription = model.transcribe(audio_path)
             text = transcription["text"]
             
-           
             if os.path.exists(audio_path):
                 os.remove(audio_path)
                 
@@ -144,4 +208,3 @@ def load_docs_from_file(tmp_path: str, ext: str, source: str) -> List[Document]:
             print(f"Transcription failed for {source}: {e}")
             return []
     return splitter.split_documents(docs)
-    

@@ -13,7 +13,14 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    
 )
+
+@app.middleware("http")
+async def add_ngrok_skip_header(request, call_next):
+    response = await call_next(request)
+    response.headers["ngrok-skip-browser-warning"] = "true"
+    return response
 
 app.include_router(api_router)
 
