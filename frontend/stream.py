@@ -13,7 +13,7 @@ import pandas as pd
 from typing import List, Dict, Any
 from io import StringIO, BytesIO
 import os
-
+import fitz
 # -------------------------
 # Config
 # -------------------------
@@ -167,7 +167,7 @@ def display_csv_row(csv_url, headers, complete_row, row_number, title="CSV Row")
         st.error(f"CSV display error: {e}")
 
 
-import fitz
+
 from docx import Document as DocxDocument
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
