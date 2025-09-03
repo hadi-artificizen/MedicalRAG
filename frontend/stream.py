@@ -1,268 +1,535 @@
-import streamlit as st
+import json
 import requests
+import streamlit as st
+import pandas as pd
+from typing import List, Dict, Any
+from io import StringIO, BytesIO
+import os
 
-BACKEND_URL = "http://localhost:8000"
+import json
+import requests
+import streamlit as st
+import pandas as pd
+from typing import List, Dict, Any
+from io import StringIO, BytesIO
+import os
+from PyPDF2 import PdfReader
+from docx import Document
+import base64
+
+# -------------------------
+# Config
+# -------------------------
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+HEADERS_BASE = {"ngrok-skip-browser-warning": "true"}
 
 st.set_page_config(page_title="Medical RAG Chatbot", layout="wide")
 
+# -------------------------
+# Helpers
+# -------------------------
+def normalize_url(path: str | None) -> str | None:
+    if not path:
+        return None
+    if path.startswith("http://") or path.startswith("https://"):
+        return path
+    return f"{BACKEND_URL}/{path.lstrip('/')}"
 
-if "user_email" not in st.session_state:
-    st.session_state.user_email = None
-if "chatroom_id" not in st.session_state:
-    st.session_state.chatroom_id = None
+def authed_headers() -> Dict[str, str]:
+    headers = dict(HEADERS_BASE)
+    token = st.session_state.get("access_token")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
-if "access_token" not in st.session_state:
-    st.session_state.access_token = None
+def read_sources_header(resp: requests.Response) -> List[Dict[str, Any]]:
+    """Parse the X-Sources header from backend and normalize asset urls"""
+    try:
+        raw = resp.headers.get("X-Sources")
+        if not raw:
+            return []
+        sources = json.loads(raw)
+        for s in sources:
+            cs = s.get("complete_source") or {}
+            for key in ("asset_uri", "video_url", "image_url", "pdf_url", "csv_url"):
+                if cs.get(key):
+                    cs[key] = normalize_url(cs[key])
+            s["complete_source"] = cs
+        return sources
+    except Exception as e:
+        st.error(f"Error parsing sources: {e}")
+        return []
 
+# -------------------------
+# Display functions
+# -------------------------
+import streamlit as st
+import requests
+from io import BytesIO
 
+def display_pdf_page(pdf_url: str, page_number: int | None, source_name: str):
+    st.subheader(f"📄 PDF Source: {source_name}")
+    try:
+        # Fetch PDF file (if it’s stored locally or in backend assets)
+        r = requests.get(pdf_url, timeout=20)
+        r.raise_for_status()
 
-def get_auth_headers():
-    """Get authorization headers with JWT token for authenticated requests"""
-    if st.session_state.access_token:
-        return {"Authorization": f"Bearer {st.session_state.access_token}"}
-    return {}
+        pdf_bytes = BytesIO(r.content)
 
-def signup(email, password):
-    return requests.post(f"{BACKEND_URL}/register", json={"email": email, "password": password})
-
-
-def login(email, password):
-    res = requests.post(f"{BACKEND_URL}/login", json={"email": email, "password": password})
-    if res.ok:
-        data = res.json()
-        
-        if "access_token" in data:
-            st.session_state.access_token = data["access_token"]
-            st.session_state.user_email = email
-    return res
-
-
-def logout():
-    """Clear all authentication data including JWT token"""
-    st.session_state.user_email = None
-    st.session_state.access_token = None  
-    st.session_state.chatroom_id = None
-
-st.sidebar.title("Login / Signup")
-
-if not st.session_state.user_email:
-    choice = st.sidebar.radio("Choose action", ["Login", "Signup"])
-    email = st.sidebar.text_input("Email")
-    password = st.sidebar.text_input("Password", type="password")
-
-    if choice == "Signup":
-        if st.sidebar.button("Sign Up"):
-            if email and password:
-                res = signup(email, password)
-                if res.ok:
-                    st.sidebar.success("Signup successful! Please login.")
-                else:
-                    
-                    try:
-                        error_msg = res.json().get("detail", "Signup failed")
-                    except:
-                        error_msg = f"Signup failed: {res.text}"
-                    st.sidebar.error(error_msg)
-            else:
-                st.sidebar.error("Please enter both email and password")
-    else:  # login
-        if st.sidebar.button("Login"):
-            if email and password:
-                res = login(email, password)
-               
-                if res.ok and st.session_state.access_token:
-                    st.sidebar.success("Login successful!")
-                    
-                    headers = get_auth_headers()
-                    create_res = requests.post(f"{BACKEND_URL}/new_chatroom/{email}", headers=headers)
-                    if create_res.ok:
-                        new_chatroom = create_res.json()
-                        st.session_state.chatroom_id = new_chatroom["chatroom_id"]
-                        st.sidebar.success(f"New chatroom #{new_chatroom['chatroom_id']} created!")
-                        st.rerun()
-                    else:
-                        st.sidebar.error("Failed to create chatroom")
-                else:
-                    
-                    try:
-                        error_data = res.json()
-                        error_msg = error_data.get("detail", "Invalid credentials")
-                    except:
-                        error_msg = "Login failed"
-                    st.sidebar.error(error_msg)
-            else:
-                st.sidebar.error("Please enter both email and password")
-else:
-    st.sidebar.success(f"Logged in as {st.session_state.user_email}")
-    
-    if st.sidebar.button("Logout"):
-        logout()
-        st.rerun()
-
-
-if st.session_state.user_email and st.session_state.access_token:
-    st.sidebar.subheader("Your Chatrooms")
-   
-    headers = get_auth_headers()
-    res = requests.get(f"{BACKEND_URL}/chatrooms/{st.session_state.user_email}", headers=headers)
-    
- 
-    if res.status_code == 401:
-        st.sidebar.error("Session expired. Please login again.")
-        logout()
-        st.rerun()
-    elif res.ok:
-        chatrooms_data = res.json()
-        chatrooms = chatrooms_data.get("chatrooms", [])
-        if chatrooms:
-            chatroom_names = [f"Chatroom {c[0]}" for c in chatrooms]  
-            chatroom_map = {f"Chatroom {c[0]}": c[0] for c in chatrooms}
-
-           
-            default_index = 0
-            if st.session_state.chatroom_id:
-                current_name = f"Chatroom {st.session_state.chatroom_id}"
-                if current_name in chatroom_names:
-                    default_index = chatroom_names.index(current_name)
-
-            selected = st.sidebar.selectbox("Select a chatroom", chatroom_names, index=default_index)
-            st.session_state.chatroom_id = chatroom_map[selected]
+        if page_number is not None:
+            human_page = page_number + 1
+            iframe_url = f"{pdf_url}#page={human_page}"
+            st.markdown(f"**Opening at Page {human_page}:**", unsafe_allow_html=True)
         else:
-            st.sidebar.info("No chatrooms yet.")
-    else:
-        st.sidebar.error("Failed to fetch chatrooms")
+            iframe_url = pdf_url
 
- 
-    if st.sidebar.button("Create New Chatroom"):
-        headers = get_auth_headers()
-        res = requests.post(f"{BACKEND_URL}/new_chatroom/{st.session_state.user_email}", headers=headers)
-        
-     
-        if res.status_code == 401:
-            st.sidebar.error("Session expired. Please login again.")
-            logout()
-            st.rerun()
-        elif res.ok:
-            new_chatroom = res.json()
-            st.session_state.chatroom_id = new_chatroom["chatroom_id"]
-            st.sidebar.success(f"New chatroom #{new_chatroom['chatroom_id']} created!")
-            st.rerun()
+        # Embed PDF in an iframe
+        st.markdown(
+            f'<iframe src="{iframe_url}" width="100%" height="600"></iframe>',
+            unsafe_allow_html=True
+        )
+
+        # Provide download option
+        st.download_button("⬇️ Download PDF", pdf_bytes, file_name=source_name)
+
+    except Exception as e:
+        st.error(f"Could not load PDF: {e}")
+        st.markdown(f"[Open PDF Directly]({pdf_url})")
 
 
-if st.session_state.user_email and st.session_state.access_token:
-    st.sidebar.subheader(" Document Upload")
-    uploaded_files = st.sidebar.file_uploader(
-        "Upload medical documents",
-        type=[".pdf", ".docx", ".csv", ".png", ".jpg", ".jpeg", ".mp4", ".mp3"],
-        accept_multiple_files=True
-    )
 
-    if uploaded_files and st.sidebar.button("Process Documents"):
-       
-        headers = get_auth_headers()
-        files = [("files", (f.name, f.getvalue(), f.type)) for f in uploaded_files]
-        try:
-            res = requests.post(f"{BACKEND_URL}/upload", files=files, headers=headers)
-            
-            
-            if res.status_code == 401:
-                st.sidebar.error("Session expired. Please login again.")
-                logout()
-                st.rerun()
-            elif res.ok:
-                result = res.json()
-                st.sidebar.success(f"✅ {result['message']}")
-                for doc in result["documents"]:
-                    if doc["status"] == "success":
-                        st.sidebar.success(f"📄 {doc['filename']}: {doc['chunks_count']} chunks")
-                    else:
-                        st.sidebar.error(f"❌ {doc['filename']}: {doc['status']}")
+import csv
+import io
+
+def display_csv_row(csv_url, headers, complete_row, row_number, title="CSV Row"):
+    st.subheader(f"📊 {title}")
+    st.write(f"**File:** {csv_url.split('/')[-1]}")
+    st.write(f"**Row {row_number}**")
+
+    try:
+        if csv_url.startswith("http"):
+            # Fetch from URL
+            response = requests.get(csv_url)
+            response.raise_for_status()
+            content = response.content.decode("utf-8-sig")
+            reader = csv.DictReader(io.StringIO(content))
+        else:
+            # Open local file
+            with open(csv_url, "r", encoding="utf-8-sig") as fh:
+                reader = csv.DictReader(fh)
+
+        # Find the right row
+        for idx, row in enumerate(reader, start=1):
+            if idx == int(row_number):
+                st.table([row])  # ✅ show only that row
+                break
+    except Exception as e:
+        st.error(f"CSV display error: {e}")
+
+
+def display_docx_preview(docx_url: str, source_name: str, paragraph_index: int | None, full_text: str | None):
+    """Show only the matched DOCX paragraph with option to open full doc"""
+    st.subheader(f"📝 DOCX Source: {source_name}")
+
+    if full_text:
+        # Highlight the matched paragraph
+        st.markdown(f"""
+        <div style="border-left: 4px solid #666; padding: 12px; background:#f8f9fa; margin:10px 0;">
+            {full_text}
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Add "View Full Document" link
+    st.markdown(f"[📎 View Full DOCX]({docx_url})")
+
+    # Try download button
+    try:
+        r = requests.get(docx_url, timeout=20)
+        if r.ok:
+            st.download_button("⬇️ Download DOCX", r.content, file_name=source_name)
+    except Exception as e:
+        st.warning(f"Could not fetch DOCX: {e}")
+
+from streamlit.components.v1 import html
+
+def display_video_segment(video_url, start, end, transcript=None, title="Video", key="0", autoplay=False):
+    st.subheader(f"🎥 Video Source: {title}")
+    # NOTE: autoplay on modern browsers requires muted
+    auto_attrs = "autoplay muted" if autoplay else ""
+    html(f"""
+      <video id="vid_{key}" width="100%" height="400" controls preload="metadata" playsinline {auto_attrs}>
+        <!-- #t hint encourages the browser to start near 'start' -->
+        <source src="{video_url}#t={float(start)},{float(end)}" type="video/mp4">
+        Your browser does not support the video tag.
+      </video>
+      <script>
+        (function() {{
+          const v = document.getElementById("vid_{key}");
+          const START = {float(start)};
+          const END   = {float(end)};
+          const NUDGE = 0.001; // nudge to avoid stuck seeks at exact boundary
+
+          function clamp() {{
+            if (v.currentTime < START) v.currentTime = START;
+            if (v.currentTime >= END) {{
+              v.pause();
+              v.currentTime = START; // loop-like behavior on replay
+            }}
+          }}
+
+          // Some browsers ignore currentTime until ready; cover multiple stages
+          function seekToStart() {{
+            try {{ v.currentTime = START + NUDGE; }} catch (e) {{}}
+          }}
+
+          v.addEventListener("loadedmetadata", seekToStart, {{ once: true }});
+          v.addEventListener("canplay", seekToStart, {{ once: true }});
+          v.addEventListener("loadeddata", seekToStart, {{ once: true }});
+
+          // Enforce boundaries during playback
+          v.addEventListener("timeupdate", clamp);
+
+          // Block scrubbing outside the window
+          v.addEventListener("seeking", function() {{
+            if (v.currentTime < START) v.currentTime = START;
+            if (v.currentTime > END) v.currentTime = END - NUDGE;
+          }});
+
+          // If autoplay requested but blocked, try to play after seeking
+          { "v.play().catch(()=>{});" if autoplay else "" }
+        }})();
+      </script>
+    """, height=440, scrolling=False)
+
+    if transcript:
+      st.caption(f"📝 Transcript: {transcript}")
+      
+def display_image_with_ocr(image_url: str, ocr_text: str | None, source_name: str):
+    """Show image with OCR text"""
+    st.subheader(f"🖼️ Image Source: {source_name}")
+    st.image(image_url, use_container_width=True)
+    if ocr_text:
+        with st.expander("🔍 OCR Text"):
+            st.text_area("Extracted Text", ocr_text, height=200)
+
+
+with st.sidebar:
+    st.title("Medical RAG")
+    if "email" not in st.session_state:
+        st.session_state["email"] = None
+    if "access_token" not in st.session_state:
+        st.session_state["access_token"] = None
+    if "chatroom_id" not in st.session_state:
+        st.session_state["chatroom_id"] = None
+
+    st.subheader("Account")
+    if not st.session_state["email"]:
+        mode = st.radio("Mode", ("Login", "Signup"))
+        email = st.text_input("Email", key="sid_email")
+        password = st.text_input("Password", type="password", key="sid_pass")
+        if st.button("Submit"):
+            if not email or not password:
+                st.error("Enter both email and password.")
             else:
-                st.sidebar.error(f"Upload failed: {res.text}")
-        except Exception as e:
-            st.sidebar.error(f"Upload error: {str(e)}")
-
-
-st.title("Medical RAG")
-
-
-if st.session_state.user_email and st.session_state.chatroom_id and st.session_state.access_token:
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        st.subheader(f"Chat - Chatroom #{st.session_state.chatroom_id}")
-
-       
-        headers = get_auth_headers()
-        res = requests.get(f"{BACKEND_URL}/messages/{st.session_state.chatroom_id}", headers=headers)
-        
-       
-        if res.status_code == 401:
-            st.error("Session expired. Please login again.")
-            logout()
-            st.rerun()
-        elif res.ok:
-            messages_data = res.json()
-            messages = messages_data.get("messages", [])
-            for msg in messages:
-                user_message, ai_response = msg
-                if user_message:
-                    st.chat_message("user").markdown(user_message)
-                if ai_response:
-                    st.chat_message("assistant").markdown(ai_response)
-
-       
-        with st.container():
-            st.markdown(
-                """
-                <style>
-                div[data-testid="stChatInput"] {
-                    position: fixed;
-                    bottom: 1rem;
-                    left: 20rem; /* adjust if sidebar overlaps */
-                    right: 1rem;
-                    z-index: 100;
-                }
-                </style>
-                """,
-                unsafe_allow_html=True
-            )
-
-            if prompt := st.chat_input("Ask your medical question..."):
-                st.chat_message("user").markdown(prompt)
-
-                chat_data = {
-                    "email": st.session_state.user_email,
-                    "chatroom_id": st.session_state.chatroom_id,
-                    "Query": prompt
-                }
-
-               
-                headers = get_auth_headers()
-                headers["Content-Type"] = "application/json" 
-
                 try:
-                    with st.chat_message("assistant"):
-                        response_placeholder = st.empty()
-                        full_response = ""
-                        with requests.post(f"{BACKEND_URL}/query", json=chat_data, 
-                                         headers=headers, stream=True) as res:
-                            if res.status_code == 401:
-                                st.error("Session expired. Please login again.")
-                                logout()
+                    endpoint = "/login" if mode == "Login" else "/register"
+                    r = requests.post(f"{BACKEND_URL}{endpoint}", json={"email": email, "password": password}, headers=HEADERS_BASE, timeout=20)
+                    if r.ok:
+                        if mode == "Login":
+                            data = r.json()
+                            token = data.get("access_token")
+                            if token:
+                                st.session_state["access_token"] = token
+                                st.session_state["email"] = email
+                                st.success("Logged in successfully!")
                                 st.rerun()
-                            elif res.ok:
-                                data= res.json()
-                                full_response = data.get("answer", "")
-                                response_placeholder.markdown(full_response)
-
-
-                                if data.get("email_sent"):
-                                    st.success("Prescription sent to your email.")
-                                           
                             else:
-                                st.error(f"Chat failed: {res.text}")
+                                st.error("Login succeeded but token missing.")
+                        else:
+                            st.success("Signup successful. Please login.")
+                    else:
+                        try:
+                            st.error(r.json().get("detail", r.text))
+                        except:
+                            st.error(r.text)
                 except Exception as e:
-                    st.error(f"Chat error: {str(e)}")
-else:
-    st.info("👈 Please login to start using the medical chatbot.")
+                    st.error(f"Authentication failed: {e}")
+    else:
+        st.write(f"Logged in as **{st.session_state['email']}**")
+        if st.button("Logout"):
+            st.session_state["email"] = None
+            st.session_state["access_token"] = None
+            st.session_state["chatroom_id"] = None
+            st.rerun()
+
+    # Only for logged in users
+    if st.session_state.get("access_token"):
+        st.markdown("---")
+        st.subheader("Chatrooms")
+        try:
+            r = requests.get(f"{BACKEND_URL}/chatrooms/{st.session_state['email']}", headers=authed_headers(), timeout=15)
+            if r.status_code == 401:
+                st.error("Session expired. Please login again.")
+            elif r.ok:
+                rooms = r.json().get("chatrooms", [])
+                if rooms:
+                    keys = [f"Chatroom {r[0]}" for r in rooms]
+                    mapping = {f"Chatroom {r[0]}": r[0] for r in rooms}
+                    default_index = 0
+                    cur_id = st.session_state.get("chatroom_id")
+                    if cur_id:
+                        name = f"Chatroom {cur_id}"
+                        if name in keys:
+                            default_index = keys.index(name)
+                    sel = st.selectbox("Select chatroom", keys, index=default_index)
+                    st.session_state["chatroom_id"] = mapping[sel]
+                else:
+                    st.info("No chatrooms. Create one below.")
+            else:
+                st.error("Failed to fetch chatrooms.")
+        except Exception as e:
+            st.warning(f"Could not fetch chatrooms: {e}")
+
+        if st.button("Create new chatroom"):
+            try:
+                r = requests.post(f"{BACKEND_URL}/new_chatroom/{st.session_state['email']}", headers=authed_headers(), timeout=15)
+                if r.ok:
+                    st.session_state["chatroom_id"] = r.json().get("chatroom_id")
+                    st.success(f"New chatroom #{st.session_state['chatroom_id']} created")
+                    st.rerun()
+                elif r.status_code == 401:
+                    st.error("Unauthorized. Please login again.")
+                    st.session_state["email"] = None
+                    st.session_state["access_token"] = None
+                else:
+                    st.error("Failed to create chatroom.")
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+        st.markdown("---")
+        st.subheader("Upload Documents")
+        uploaded = st.file_uploader(
+            "Select files (.pdf,.docx,.csv,.png,.jpg,.mp4,.mp3)", 
+            accept_multiple_files=True, 
+            type=["pdf","docx","csv","png","jpg","jpeg","mp4","mp3"]
+        )
+        if st.button("Process Documents"):
+            if not uploaded:
+                st.warning("Choose files first")
+            else:
+                files = []
+                for f in uploaded:
+                    files.append(("files", (f.name, f.getvalue(), f.type)))
+                try:
+                    with st.spinner("Processing documents..."):
+                        r = requests.post(f"{BACKEND_URL}/upload", files=files, headers=authed_headers(), timeout=300)
+                    if r.status_code == 401:
+                        st.error("Unauthorized. Please login again.")
+                        st.session_state["email"] = None
+                        st.session_state["access_token"] = None
+                    elif r.ok:
+                        j = r.json()
+                        st.success(j.get("message", "Processed"))
+                        docs = j.get("documents", [])
+                        for d in docs:
+                            if d.get("status") == "success":
+                                st.info(f"✅ {d.get('filename')}: {d.get('chunks_count')} chunks")
+                            else:
+                                st.error(f"❌ {d.get('filename')}: {d.get('status')}")
+                    else:
+                        st.error(f"Upload failed: {r.text}")
+                except Exception as e:
+                    st.error(f"Upload error: {e}")
+
+# -------------------------
+# Main app area
+# -------------------------
+st.title("🩺 Medical RAG Chatbot")
+
+if not st.session_state.get("access_token"):
+    st.info("Please login or create an account from the sidebar.")
+    st.stop()
+
+if not st.session_state.get("chatroom_id"):
+    st.info("Create or select a chatroom in the sidebar.")
+    st.stop()
+
+# Initialize chat messages
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# Load message history
+try:
+    r = requests.get(f"{BACKEND_URL}/messages/{st.session_state['chatroom_id']}", headers=authed_headers(), timeout=15)
+    if r.status_code == 401:
+        st.error("Session expired.")
+    elif r.ok:
+        hist = r.json().get("messages", [])
+        # Convert to chat format if not already loaded
+        if not st.session_state.messages and hist:
+            for user_msg, ai_msg in hist:
+                if user_msg:
+                    st.session_state.messages.append({"role": "user", "content": user_msg})
+                if ai_msg:
+                    st.session_state.messages.append({"role": "assistant", "content": ai_msg})
+    else:
+        hist = []
+except Exception:
+    hist = []
+
+# Display chat history
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Chat input
+if prompt := st.chat_input("Ask your medical question..."):
+    # Add user message to chat history
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    
+    # Display user message
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Prepare headers for API call
+    headers = authed_headers()
+    headers["Content-Type"] = "application/json"
+
+    # Stream assistant response
+    with st.chat_message("assistant"):
+        response_placeholder = st.empty()
+        sources_placeholder = st.empty()
+        collected_response = ""
+        sources = []
+
+        try:
+            with requests.post(f"{BACKEND_URL}/query",
+                               json={
+                                   "email": st.session_state["email"], 
+                                   "chatroom_id": st.session_state["chatroom_id"], 
+                                   "Query": prompt
+                               },
+                               headers=headers,
+                               stream=True,
+                               timeout=300) as resp:
+
+                if resp.status_code == 401:
+                    st.error("Unauthorized. Please login again.")
+                    st.session_state["email"] = None
+                    st.session_state["access_token"] = None
+                    st.stop()
+
+                # Parse sources from header
+                sources = read_sources_header(resp)
+
+                # Stream the response text
+                for chunk in resp.iter_content(chunk_size=1024):
+                    if chunk:
+                        try:
+                            part = chunk.decode("utf-8", errors="replace")
+                        except:
+                            part = str(chunk)
+                        collected_response += part
+                        response_placeholder.markdown(collected_response + "▌")
+
+                # Final response (remove cursor)
+                response_placeholder.markdown(collected_response.strip() or "No response generated.")
+
+        except Exception as e:
+            st.error(f"Error during chat: {e}")
+            collected_response = "Sorry, there was an error processing your request."
+            response_placeholder.markdown(collected_response)
+
+    # Add assistant response to chat history
+    if collected_response:
+        st.session_state.messages.append({"role": "assistant", "content": collected_response})
+    import re
+
+    def extract_doc_number(answer_text: str):
+        match = re.search(r"Doc\s+(\d+)", answer_text)
+        if match:
+            return int(match.group(1))
+        return None
+    # Display enhanced sources
+    if sources:
+            st.markdown("---")
+            st.markdown("### 📚 **Source Documents**")
+        
+            doc_num = extract_doc_number(collected_response)
+            if doc_num and 0 < doc_num <= len(sources):
+                top_source = sources[doc_num - 1]   # Doc 1 → index 0
+            else:
+                top_source = sources[0]
+
+            display = top_source.get("display", {}) or {}
+            cs = top_source.get("complete_source", {}) or {}
+            meta = top_source.get("metadata", {}) or {}
+            title = cs.get("source") or meta.get("source") or f"Source {top_source}"
+                
+            dtype = display.get("type")
+            
+            # VIDEO SOURCE
+            if dtype == "video_player" or (cs.get("video_url") and cs.get("video_url").lower().endswith((".mp4", ".mov", ".webm"))):
+                url = cs.get("video_url") or cs.get("asset_uri")
+                start = display.get("start_time") or cs.get("start")
+                end = display.get("end_time") or cs.get("end")
+                transcript = cs.get("transcript") or meta.get("transcript")
+                display_video_segment(url, start, end, transcript, title, f"video_{top_source}")
+            
+            
+            # PDF PAGE
+            elif dtype == "pdf_page" or (cs.get("pdf_url") or (cs.get("asset_uri") and cs.get("asset_uri").lower().endswith(".pdf"))):
+                pdf_url = cs.get("pdf_url") or cs.get("asset_uri")
+                page_number = cs.get("page_number") or meta.get("page")
+                full_text = cs.get("full_text") or meta.get("full_text")
+                display_pdf_page(pdf_url, page_number, title)
+            
+            # CSV ROW
+            elif dtype == "csv" or (cs.get("csv_url") or (cs.get("asset_uri") and cs.get("asset_uri").lower().endswith(".csv"))):
+                csv_url = cs.get("csv_url") or cs.get("asset_uri")
+                headers = cs.get("headers") or meta.get("csv_columns", "").split(",")
+                row_number = cs.get("row_number") or meta.get("row_number")
+
+                row_json = cs.get("complete_row") or meta.get("row_data")
+                try:
+                    complete_row = json.loads(row_json) if isinstance(row_json, str) else (row_json or {})
+                except Exception:
+                    complete_row = {}
+
+                display_csv_row(csv_url, headers, complete_row, row_number, title)
+            
+            # DOCX PARAGRAPH
+            elif dtype == "docx_paragraph":
+                docx_url = cs.get("docx_url") or cs.get("asset_uri")
+                paragraph_index = cs.get("paragraph_index") or meta.get("paragraph_index")
+                full_text = cs.get("full_text") or meta.get("full_text")
+                display_docx_preview(docx_url, title, paragraph_index, full_text)
+            
+            # IMAGE with OCR
+            elif dtype == "image_viewer" or (cs.get("image_url") or (cs.get("asset_uri") and cs.get("asset_uri").lower().endswith((".png", ".jpg", ".jpeg", ".gif")))):
+                img_url = cs.get("image_url") or cs.get("asset_uri")
+                ocr_text = cs.get("full_text") or meta.get("full_text") or top_source.get("search_chunk")
+                display_image_with_ocr(img_url, ocr_text, title)
+            
+            # DEFAULT/FALLBACK
+            else:
+                st.markdown(f"""
+                <div style="border: 1px solid #ccc; border-radius: 8px; padding: 12px; background: #f8f9fa; margin: 10px 0;">
+                    <h4 style="margin-top: 0;">📄 {title}</h4>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                content = cs.get("text") or top_source.get("search_chunk")
+                if content:
+                    st.markdown(f"""
+                    <div style="background: white; padding: 12px; border-radius: 4px; border-left: 4px solid #666;">
+                        {content}
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # Show asset link if available
+                if cs.get("asset_uri"):
+                    asset_url = normalize_url(cs.get("asset_uri"))
+                    st.markdown(f"[📎 View File]({asset_url})")
+            
+            st.markdown("---")
