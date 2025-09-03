@@ -595,7 +595,7 @@ if prompt := st.chat_input("Ask your medical question..."):
                 docx_url = cs.get("docx_url") or cs.get("asset_uri")
                 paragraph_index = cs.get("paragraph_index") or meta.get("paragraph_index")
                 full_text = cs.get("full_text") or meta.get("full_text")
-                display_docx_preview_with_image(docx_url, title, paragraph_index, full_text)
+                display_complete_docx_as_image(docx_url, title, paragraph_index, full_text)
             
             # IMAGE with OCR
             elif dtype == "image_viewer" or (cs.get("image_url") or (cs.get("asset_uri") and cs.get("asset_uri").lower().endswith((".png", ".jpg", ".jpeg", ".gif")))):
