@@ -2,7 +2,7 @@ streamlit
 requests
 pandas
 python-docx
-pymupdf
+PyMuPDF
 reportlab
 pillow
 moviepy
