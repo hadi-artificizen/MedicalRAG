@@ -18,7 +18,7 @@ import os
 # Config
 # -------------------------
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://full-shrimp-deeply.ngrok-free.app").rstrip("/")
 HEADERS_BASE = {
     "ngrok-skip-browser-warning": "true",
     "User-Agent": "StreamlitApp/1.0"  # Add user agent
