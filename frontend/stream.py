@@ -20,7 +20,7 @@ import base64
 # -------------------------
 # Config
 # -------------------------
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://full-shrimp-deeply.ngrok-free.app").rstrip("/")
 HEADERS_BASE = {"ngrok-skip-browser-warning": "true"}
 
 st.set_page_config(page_title="Medical RAG Chatbot", layout="wide")
