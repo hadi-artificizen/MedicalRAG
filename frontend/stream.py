@@ -13,7 +13,6 @@ import pandas as pd
 from typing import List, Dict, Any
 from io import StringIO, BytesIO
 import os
-from PyPDF2 import PdfReader
 from docx import Document
 import base64
 
