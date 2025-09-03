@@ -2,7 +2,7 @@ streamlit
 requests
 pandas
 python-docx
-Fitz
+fitz
 reportlab
 pillow
 moviepy
