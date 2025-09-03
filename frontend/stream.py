@@ -62,9 +62,11 @@ def read_sources_header(resp: requests.Response) -> List[Dict[str, Any]]:
 # -------------------------
 # Display functions
 # -------------------------
+import streamlit as st
+import requests
+from io import BytesIO
 
-
-
+import fitz  # PyMuPDF
 import base64
 from PIL import Image
 import io
@@ -166,7 +168,7 @@ def display_csv_row(csv_url, headers, complete_row, row_number, title="CSV Row")
         st.error(f"CSV display error: {e}")
 
 
-
+import fitz
 from docx import Document as DocxDocument
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
@@ -225,18 +227,28 @@ def render_complete_docx_as_image(docx_url: str, source_name: str, highlight_par
         return None, None
 
 
-def display_complete_docx_as_image(docx_url: str, source_name: str, paragraph_index: int | None, page_number: int | None, full_text: str | None):
+def display_complete_docx_as_image(
+    docx_url: str,
+    source_name: str,
+    paragraph_index: int | None = None,
+    page_number: int | None = None,
+    full_text: str | None = None
+):
     """Display only the relevant page of DOCX as image"""
     st.subheader(f"📝 DOCX Source: {source_name}")
 
-    # Render only the matched page
-    page_images, document_text = render_complete_docx_as_image(docx_url, source_name, paragraph_index, page_number)
+    page_images, document_text = render_complete_docx_as_image(
+        docx_url, source_name, paragraph_index, page_number
+    )
 
     if page_images:
         st.markdown("**Relevant Page Preview:**")
         for i, img_data in enumerate(page_images):
-            with st.container():
-                st.image(img_data, use_container_width=True, caption=f"{source_name} - Page {page_number + 1}")
+            if page_number is not None:
+                caption = f"{source_name} - Page {page_number + 1}"
+            else:
+                caption = f"{source_name} - Page {i + 1}"
+            st.image(img_data, use_container_width=True, caption=caption)
 
 from streamlit.components.v1 import html
 
@@ -591,7 +603,7 @@ if prompt := st.chat_input("Ask your medical question..."):
                 docx_url = cs.get("docx_url") or cs.get("asset_uri")
                 paragraph_index = cs.get("paragraph_index") or meta.get("paragraph_index")
                 full_text = cs.get("full_text") or meta.get("full_text")
-                display_complete_docx_as_image(docx_url, title, paragraph_index, full_text)
+                display_complete_docx_as_image(docx_url, title, paragraph_index)
             
             # IMAGE with OCR
             elif dtype == "image_viewer" or (cs.get("image_url") or (cs.get("asset_uri") and cs.get("asset_uri").lower().endswith((".png", ".jpg", ".jpeg", ".gif")))):
