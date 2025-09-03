@@ -13,8 +13,7 @@ import pandas as pd
 from typing import List, Dict, Any
 from io import StringIO, BytesIO
 import os
-from docx import Document
-import base64
+
 
 # -------------------------
 # Config
