@@ -62,11 +62,10 @@ def read_sources_header(resp: requests.Response) -> List[Dict[str, Any]]:
 # -------------------------
 # Display functions
 # -------------------------
-import streamlit as st
-import requests
-from io import BytesIO
 
-import fitz  # PyMuPDF
+
+
+import PyMuPDF
 import base64
 from PIL import Image
 import io
