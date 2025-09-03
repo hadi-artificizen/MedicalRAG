@@ -19,10 +19,8 @@ import os
 # -------------------------
 
 BACKEND_URL = os.getenv("BACKEND_URL", "https://full-shrimp-deeply.ngrok-free.app").rstrip("/")
-HEADERS_BASE = {
-    "ngrok-skip-browser-warning": "true",
-    "User-Agent": "StreamlitApp/1.0"  # Add user agent
-}
+HEADERS_BASE = {"ngrok-skip-browser-warning": "true"}
+
 st.set_page_config(page_title="Medical RAG Chatbot", layout="wide")
 
 # -------------------------
@@ -621,10 +619,6 @@ if prompt := st.chat_input("Ask your medical question..."):
                 
                 # Show asset link if available
                 if cs.get("asset_uri"):
-                    asset_url = normalize_url(cs.get("asset_uri"))
-                    st.markdown(f"[📎 View File]({asset_url})")
-            
-            st.markdown("---")
                     asset_url = normalize_url(cs.get("asset_uri"))
                     st.markdown(f"[📎 View File]({asset_url})")
             
