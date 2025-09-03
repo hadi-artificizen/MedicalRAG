@@ -14,13 +14,15 @@ from typing import List, Dict, Any
 from io import StringIO, BytesIO
 import os
 
-
 # -------------------------
 # Config
 # -------------------------
-BACKEND_URL = os.getenv("BACKEND_URL", "https://full-shrimp-deeply.ngrok-free.app").rstrip("/")
-HEADERS_BASE = {"ngrok-skip-browser-warning": "true"}
 
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+HEADERS_BASE = {
+    "ngrok-skip-browser-warning": "true",
+    "User-Agent": "StreamlitApp/1.0"  # Add user agent
+}
 st.set_page_config(page_title="Medical RAG Chatbot", layout="wide")
 
 # -------------------------
@@ -35,6 +37,7 @@ def normalize_url(path: str | None) -> str | None:
 
 def authed_headers() -> Dict[str, str]:
     headers = dict(HEADERS_BASE)
+    headers["ngrok-skip-browser-warning"] = "true"  # Add this for all requests
     token = st.session_state.get("access_token")
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -67,32 +70,62 @@ from io import BytesIO
 
 def display_pdf_page(pdf_url: str, page_number: int | None, source_name: str):
     st.subheader(f"📄 PDF Source: {source_name}")
+    
+    # Add ngrok bypass parameter
+    pdf_url_with_bypass = f"{pdf_url}?ngrok-skip-browser-warning=true"
+    
     try:
-        # Fetch PDF file (if it’s stored locally or in backend assets)
-        r = requests.get(pdf_url, timeout=20)
-        r.raise_for_status()
-
-        pdf_bytes = BytesIO(r.content)
-
         if page_number is not None:
-            human_page = page_number + 1
-            iframe_url = f"{pdf_url}#page={human_page}"
-            st.markdown(f"**Opening at Page {human_page}:**", unsafe_allow_html=True)
-        else:
-            iframe_url = pdf_url
-
-        # Embed PDF in an iframe
-        st.markdown(
-            f'<iframe src="{iframe_url}" width="100%" height="600"></iframe>',
-            unsafe_allow_html=True
-        )
-
-        # Provide download option
-        st.download_button("⬇️ Download PDF", pdf_bytes, file_name=source_name)
-
+            human_page = page_number
+            st.markdown(f"**Page {human_page}**")
+        
+        # Use object tag instead of iframe for better PDF support
+        st.markdown(f"""
+        <object data="{pdf_url_with_bypass}" type="application/pdf" width="100%" height="600px">
+            <embed src="{pdf_url_with_bypass}" type="application/pdf" width="100%" height="600px" />
+            <p>Unable to display PDF. <a href="{pdf_url}" target="_blank">Click here to open in new tab</a></p>
+        </object>
+        """, unsafe_allow_html=True)
+        
+        # Fetch for download button
+        headers = {"ngrok-skip-browser-warning": "true"}
+        r = requests.get(pdf_url, headers=headers, timeout=20)
+        r.raise_for_status()
+        st.download_button("⬇️ Download PDF", r.content, file_name=source_name, mime_type="application/pdf")
+        
     except Exception as e:
         st.error(f"Could not load PDF: {e}")
-        st.markdown(f"[Open PDF Directly]({pdf_url})")
+        st.markdown(f"[📎 Open PDF in New Tab]({pdf_url})")
+
+# def display_pdf_page(pdf_url: str, page_number: int | None, source_name: str):
+#     st.subheader(f"📄 PDF Source: {source_name}")
+#     pdf_url_with_bypass = f"{pdf_url}?ngrok-skip-browser-warning=true"
+#     try:
+#         # Fetch PDF file (if it’s stored locally or in backend assets)
+#         r = requests.get(pdf_url, timeout=20)
+#         r.raise_for_status()
+
+#         pdf_bytes = BytesIO(r.content)
+
+#         if page_number is not None:
+#             human_page = page_number + 1
+#             iframe_url = f"{pdf_url}#page={human_page}"
+#             st.markdown(f"**Opening at Page {human_page}:**", unsafe_allow_html=True)
+#         else:
+#             iframe_url = pdf_url
+
+#         # Embed PDF in an iframe
+#         st.markdown(
+#             f'<iframe src="{iframe_url}" width="100%" height="600"></iframe>',
+#             unsafe_allow_html=True
+#         )
+
+#         # Provide download option
+#         st.download_button("⬇️ Download PDF", pdf_bytes, file_name=source_name)
+
+#     except Exception as e:
+#         st.error(f"Could not load PDF: {e}")
+#         st.markdown(f"[Open PDF Directly]({pdf_url})")
 
 
 
@@ -126,89 +159,169 @@ def display_csv_row(csv_url, headers, complete_row, row_number, title="CSV Row")
 
 
 def display_docx_preview(docx_url: str, source_name: str, paragraph_index: int | None, full_text: str | None):
-    """Show only the matched DOCX paragraph with option to open full doc"""
+    """Show DOCX paragraph with download option"""
     st.subheader(f"📝 DOCX Source: {source_name}")
 
     if full_text:
-        # Highlight the matched paragraph
         st.markdown(f"""
-        <div style="border-left: 4px solid #666; padding: 12px; background:#f8f9fa; margin:10px 0;">
-            {full_text}
+        <div style="border-left: 4px solid #2E86AB; padding: 16px; background: #f8f9fa; margin: 10px 0; border-radius: 4px;">
+            <p style="margin: 0; line-height: 1.6;">{full_text}</p>
         </div>
         """, unsafe_allow_html=True)
 
-    # Add "View Full Document" link
-    st.markdown(f"[📎 View Full DOCX]({docx_url})")
-
-    # Try download button
+    # Download button
     try:
-        r = requests.get(docx_url, timeout=20)
+        headers = {"ngrok-skip-browser-warning": "true"}
+        r = requests.get(docx_url, headers=headers, timeout=20)
         if r.ok:
-            st.download_button("⬇️ Download DOCX", r.content, file_name=source_name)
+            st.download_button(
+                "⬇️ Download DOCX", 
+                r.content, 
+                file_name=source_name,
+                mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        else:
+            st.markdown(f"[📎 View DOCX]({docx_url})")
     except Exception as e:
         st.warning(f"Could not fetch DOCX: {e}")
+        st.markdown(f"[📎 View DOCX]({docx_url})")
+
 
 from streamlit.components.v1 import html
-
 def display_video_segment(video_url, start, end, transcript=None, title="Video", key="0", autoplay=False):
     st.subheader(f"🎥 Video Source: {title}")
-    # NOTE: autoplay on modern browsers requires muted
+    
+    # Add ngrok headers to video requests
+    video_with_headers = f"{video_url}?ngrok-skip-browser-warning=true"
+    
     auto_attrs = "autoplay muted" if autoplay else ""
     html(f"""
-      <video id="vid_{key}" width="100%" height="400" controls preload="metadata" playsinline {auto_attrs}>
-        <!-- #t hint encourages the browser to start near 'start' -->
-        <source src="{video_url}#t={float(start)},{float(end)}" type="video/mp4">
-        Your browser does not support the video tag.
+      <style>
+        video {{ 
+          border-radius: 8px; 
+          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }}
+      </style>
+      <video id="vid_{key}" width="100%" height="400" controls preload="metadata" playsinline {auto_attrs} crossorigin="anonymous">
+        <source src="{video_with_headers}" type="video/mp4">
+        <p>Your browser does not support the video tag. <a href="{video_url}" target="_blank">Click here to view the video</a></p>
       </video>
       <script>
         (function() {{
           const v = document.getElementById("vid_{key}");
           const START = {float(start)};
           const END   = {float(end)};
-          const NUDGE = 0.001; // nudge to avoid stuck seeks at exact boundary
-
-          function clamp() {{
-            if (v.currentTime < START) v.currentTime = START;
+          
+          v.addEventListener("loadedmetadata", function() {{
+            v.currentTime = START;
+          }});
+          
+          v.addEventListener("timeupdate", function() {{
             if (v.currentTime >= END) {{
               v.pause();
-              v.currentTime = START; // loop-like behavior on replay
+              v.currentTime = START;
             }}
-          }}
-
-          // Some browsers ignore currentTime until ready; cover multiple stages
-          function seekToStart() {{
-            try {{ v.currentTime = START + NUDGE; }} catch (e) {{}}
-          }}
-
-          v.addEventListener("loadedmetadata", seekToStart, {{ once: true }});
-          v.addEventListener("canplay", seekToStart, {{ once: true }});
-          v.addEventListener("loadeddata", seekToStart, {{ once: true }});
-
-          // Enforce boundaries during playback
-          v.addEventListener("timeupdate", clamp);
-
-          // Block scrubbing outside the window
-          v.addEventListener("seeking", function() {{
-            if (v.currentTime < START) v.currentTime = START;
-            if (v.currentTime > END) v.currentTime = END - NUDGE;
           }});
-
-          // If autoplay requested but blocked, try to play after seeking
-          { "v.play().catch(()=>{});" if autoplay else "" }
+          
+          // Handle errors
+          v.addEventListener("error", function(e) {{
+            console.error("Video error:", e);
+            v.style.display = "none";
+            const errorMsg = document.createElement("div");
+            errorMsg.innerHTML = '<p style="color: red;">Error loading video. <a href="{video_url}" target="_blank">Click to open directly</a></p>';
+            v.parentNode.insertBefore(errorMsg, v.nextSibling);
+          }});
         }})();
       </script>
-    """, height=440, scrolling=False)
+    """, height=460, scrolling=False)
 
     if transcript:
-      st.caption(f"📝 Transcript: {transcript}")
+        st.caption(f"📝 Transcript: {transcript}")
+# def display_video_segment(video_url, start, end, transcript=None, title="Video", key="0", autoplay=False):
+#     st.subheader(f"🎥 Video Source: {title}")
+#     # NOTE: autoplay on modern browsers requires muted
+#     auto_attrs = "autoplay muted" if autoplay else ""
+#     html(f"""
+#       <video id="vid_{key}" width="100%" height="400" controls preload="metadata" playsinline {auto_attrs}>
+#         <!-- #t hint encourages the browser to start near 'start' -->
+#         <source src="{video_url}#t={float(start)},{float(end)}" type="video/mp4">
+#         Your browser does not support the video tag.
+#       </video>
+#       <script>
+#         (function() {{
+#           const v = document.getElementById("vid_{key}");
+#           const START = {float(start)};
+#           const END   = {float(end)};
+#           const NUDGE = 0.001; // nudge to avoid stuck seeks at exact boundary
+
+#           function clamp() {{
+#             if (v.currentTime < START) v.currentTime = START;
+#             if (v.currentTime >= END) {{
+#               v.pause();
+#               v.currentTime = START; // loop-like behavior on replay
+#             }}
+#           }}
+
+#           // Some browsers ignore currentTime until ready; cover multiple stages
+#           function seekToStart() {{
+#             try {{ v.currentTime = START + NUDGE; }} catch (e) {{}}
+#           }}
+
+#           v.addEventListener("loadedmetadata", seekToStart, {{ once: true }});
+#           v.addEventListener("canplay", seekToStart, {{ once: true }});
+#           v.addEventListener("loadeddata", seekToStart, {{ once: true }});
+
+#           // Enforce boundaries during playback
+#           v.addEventListener("timeupdate", clamp);
+
+#           // Block scrubbing outside the window
+#           v.addEventListener("seeking", function() {{
+#             if (v.currentTime < START) v.currentTime = START;
+#             if (v.currentTime > END) v.currentTime = END - NUDGE;
+#           }});
+
+#           // If autoplay requested but blocked, try to play after seeking
+#           { "v.play().catch(()=>{});" if autoplay else "" }
+#         }})();
+#       </script>
+#     """, height=440, scrolling=False)
+
+#     if transcript:
+#       st.caption(f"📝 Transcript: {transcript}")
       
 def display_image_with_ocr(image_url: str, ocr_text: str | None, source_name: str):
     """Show image with OCR text"""
     st.subheader(f"🖼️ Image Source: {source_name}")
-    st.image(image_url, use_container_width=True)
-    if ocr_text:
+    
+    try:
+        # Add headers for image requests
+        headers = {"ngrok-skip-browser-warning": "true"}
+        
+        # Display image with error handling
+        st.markdown(f"""
+        <img src="{image_url}?ngrok-skip-browser-warning=true" 
+             style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"
+             onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+        <div style="display: none; padding: 20px; background: #f0f0f0; text-align: center; border-radius: 8px;">
+            <p>Image could not be loaded. <a href="{image_url}" target="_blank">Click to view directly</a></p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    except Exception as e:
+        st.error(f"Could not load image: {e}")
+        st.markdown(f"[🖼️ View Image]({image_url})")
+    
+    if ocr_text and ocr_text.strip():
         with st.expander("🔍 OCR Text"):
-            st.text_area("Extracted Text", ocr_text, height=200)
+            st.text_area("Extracted Text", ocr_text, height=200, key=f"ocr_{hash(image_url)}")
+            
+# def display_image_with_ocr(image_url: str, ocr_text: str | None, source_name: str):
+#     """Show image with OCR text"""
+#     st.subheader(f"🖼️ Image Source: {source_name}")
+#     st.image(image_url, use_container_width=True)
+#     if ocr_text:
+#         with st.expander("🔍 OCR Text"):
+#             st.text_area("Extracted Text", ocr_text, height=200)
 
 
 with st.sidebar:
