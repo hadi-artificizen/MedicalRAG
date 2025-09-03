@@ -65,7 +65,6 @@ def read_sources_header(resp: requests.Response) -> List[Dict[str, Any]]:
 
 
 
-import PyMuPDF
 import base64
 from PIL import Image
 import io
