@@ -365,6 +365,67 @@
                 height: calc(100vh - 300px);
             }
         }
+
+        /* Additional styles for sources */
+        #sources-container { 
+            background: #fff; 
+            border-top: 2px solid #ddd;
+            padding: 20px; 
+            max-height: 300px; 
+            overflow-y: auto; 
+            display: none; } 
+
+        .source-header { 
+            margin-bottom: 10px; 
+        }
+
+        /* Tables and inner elements scale nicely inside */
+        #sources-container table,
+        #sources-container img,
+        #sources-container video,
+        #sources-container iframe {
+            max-height: 160px;
+            width: 100%;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+
+        .match-info {
+            font-size: 12px;
+            color: #666;
+        }
+
+        details {
+            margin-top: 10px;
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        summary {
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
     </style>
 </head>
 <body>
@@ -426,9 +487,8 @@
             <div class="chat-header">
                 <h2 id="chat-title">Chat - Chatroom #</h2>
             </div>
-            
+            <div id="sources-container"></div>
             <div id="messages-container"></div>
-            
             <div class="chat-input-container">
                 <input type="text" id="chat-input" placeholder="Ask your medical question...">
                 <button id="send-btn">Send</button>
@@ -437,359 +497,360 @@
     </div>
 
     <script>
-        const BACKEND_URL = " https://full-shrimp-deeply.ngrok-free.app";
+    const BACKEND_URL = "http://localhost:8000"; 
 
-        // Global state
-        let currentUser = {
-            email: null,
-            accessToken: null,
-            chatroomId: null
-        };
+    // Global state
+    let currentUser = {
+        email: null,
+        accessToken: null,
+        chatroomId: null
+    };
 
-        let isLoginMode = true;
+    let isLoginMode = true;
 
-        // Initialize when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            setupEventListeners();
-            
-            // Check if user was previously logged in
-            const savedToken = localStorage.getItem('accessToken');
-            const savedEmail = localStorage.getItem('userEmail');
-            
-            if (savedToken && savedEmail) {
-                currentUser.accessToken = savedToken;
-                currentUser.email = savedEmail;
-                showUserInterface();
-                loadChatrooms();
-            }
-        });
-
-        function setupEventListeners() {
-            document.getElementById('login-tab').addEventListener('click', () => switchAuthMode(true));
-            document.getElementById('signup-tab').addEventListener('click', () => switchAuthMode(false));
-            document.getElementById('auth-submit').addEventListener('click', handleAuth);
-            document.getElementById('logout-btn').addEventListener('click', logout);
-            document.getElementById('upload-btn').addEventListener('click', handleUpload);
-            document.getElementById('new-chatroom-btn').addEventListener('click', createNewChatroom);
-            document.getElementById('send-btn').addEventListener('click', sendMessage);
-            document.getElementById('chat-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') sendMessage();
-            });
-        }
-
-        function switchAuthMode(loginMode) {
-            isLoginMode = loginMode;
-            document.getElementById('login-tab').classList.toggle('active', loginMode);
-            document.getElementById('signup-tab').classList.toggle('active', !loginMode);
-            document.getElementById('auth-submit').textContent = loginMode ? 'Login' : 'Sign Up';
-            clearAuthMessage();
-        }
-
-        function showAuthMessage(message, isError = false) {
-            const authMessage = document.getElementById('auth-message');
-            authMessage.textContent = message;
-            authMessage.className = isError ? 'error' : 'success';
-        }
-
-        function clearAuthMessage() {
-            const authMessage = document.getElementById('auth-message');
-            authMessage.textContent = '';
-            authMessage.className = '';
-        }
-
-        async function handleAuth() {
-            const email = document.getElementById('auth-email').value.trim();
-            const password = document.getElementById('auth-password').value.trim();
-            
-            if (!email || !password) {
-                showAuthMessage('Please enter both email and password', true);
-                return;
-            }
-            
-            try {
-                const endpoint = isLoginMode ? '/login' : '/register';
-                const response = await fetch(`${BACKEND_URL}${endpoint}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'ngrok-skip-browser-warning': 'true'
-                    },
-                    body: JSON.stringify({ email, password })
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    if (isLoginMode) {
-                        currentUser.accessToken = data.access_token;
-                        currentUser.email = email;
-                        
-                        // Save to localStorage
-                        localStorage.setItem('accessToken', data.access_token);
-                        localStorage.setItem('userEmail', email);
-                        
-                        showAuthMessage('Login successful!');
-                        
-                        // Create initial chatroom
-                        await createNewChatroom();
-                        showUserInterface();
-                        
-                    } else {
-                        showAuthMessage('Signup successful! Please login.');
-                        switchAuthMode(true);
-                        document.getElementById('auth-email').value = '';
-                        document.getElementById('auth-password').value = '';
-                    }
-                } else {
-                    showAuthMessage(data.detail || 'Authentication failed', true);
-                }
-            } catch (error) {
-                showAuthMessage('Network error. Please try again.', true);
-                console.error('Auth error:', error);
-            }
-        }
-
-        function logout() {
-            currentUser = { email: null, accessToken: null, chatroomId: null };
-            localStorage.removeItem('accessToken');
-            localStorage.removeItem('userEmail');
-            
-            document.getElementById('auth-section').style.display = 'block';
-            document.getElementById('user-section').style.display = 'none';
-            document.getElementById('welcome-screen').style.display = 'flex';
-            document.getElementById('chat-container').style.display = 'none';
-            
-            document.getElementById('auth-email').value = '';
-            document.getElementById('auth-password').value = '';
-            clearAuthMessage();
-        }
-
-        function showUserInterface() {
-            document.getElementById('auth-section').style.display = 'none';
-            document.getElementById('user-section').style.display = 'block';
-            document.getElementById('welcome-screen').style.display = 'none';
-            document.getElementById('chat-container').style.display = 'flex';
-            
-            document.getElementById('user-email').textContent = currentUser.email;
+    // Initialize when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        setupEventListeners();
+        
+        // Check if user was previously logged in
+        const savedToken = localStorage.getItem('accessToken');
+        const savedEmail = localStorage.getItem('userEmail');
+        
+        if (savedToken && savedEmail) {
+            currentUser.accessToken = savedToken;
+            currentUser.email = savedEmail;
+            showUserInterface();
             loadChatrooms();
         }
+    });
 
-        async function handleUpload() {
-            const files = document.getElementById('file-upload').files;
-            if (!files || files.length === 0) {
-                document.getElementById('upload-status').innerHTML = '<div class="error">Please select files to upload</div>';
+    function normalizeUrl(url) {
+        if (!url) return "";
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return url;
+        }
+        return `${BACKEND_URL.replace(/\/$/, '')}${url}`;
+    }
+
+    function setupEventListeners() {
+        document.getElementById('login-tab').addEventListener('click', () => switchAuthMode(true));
+        document.getElementById('signup-tab').addEventListener('click', () => switchAuthMode(false));
+        document.getElementById('auth-submit').addEventListener('click', handleAuth);
+        document.getElementById('logout-btn').addEventListener('click', logout);
+        document.getElementById('upload-btn').addEventListener('click', handleUpload);
+        document.getElementById('new-chatroom-btn').addEventListener('click', createNewChatroom);
+        document.getElementById('send-btn').addEventListener('click', sendMessage);
+        document.getElementById('chat-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+    }
+
+    function switchAuthMode(loginMode) {
+        isLoginMode = loginMode;
+        document.getElementById('login-tab').classList.toggle('active', loginMode);
+        document.getElementById('signup-tab').classList.toggle('active', !loginMode);
+        document.getElementById('auth-submit').textContent = loginMode ? 'Login' : 'Sign Up';
+        clearAuthMessage();
+    }
+
+    function showAuthMessage(message, isError = false) {
+        const authMessage = document.getElementById('auth-message');
+        authMessage.textContent = message;
+        authMessage.className = isError ? 'error' : 'success';
+    }
+
+    function clearAuthMessage() {
+        const authMessage = document.getElementById('auth-message');
+        authMessage.textContent = '';
+        authMessage.className = '';
+    }
+
+    async function handleAuth() {
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-password').value.trim();
+        
+        if (!email || !password) {
+            showAuthMessage('Please enter both email and password', true);
+            return;
+        }
+        
+        try {
+            const endpoint = isLoginMode ? '/login' : '/register';
+            const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'ngrok-skip-browser-warning': 'true'
+                },
+                body: JSON.stringify({ email, password })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                if (isLoginMode) {
+                    currentUser.accessToken = data.access_token;
+                    currentUser.email = email;
+                    
+                    localStorage.setItem('accessToken', data.access_token);
+                    localStorage.setItem('userEmail', email);
+                    
+                    showAuthMessage('Login successful!');
+                    
+                    await createNewChatroom();
+                    showUserInterface();
+                    
+                } else {
+                    showAuthMessage('Signup successful! Please login.');
+                    switchAuthMode(true);
+                    document.getElementById('auth-email').value = '';
+                    document.getElementById('auth-password').value = '';
+                }
+            } else {
+                showAuthMessage(data.detail || 'Authentication failed', true);
+            }
+        } catch (error) {
+            showAuthMessage('Network error. Please try again.', true);
+            console.error('Auth error:', error);
+        }
+    }
+
+    function logout() {
+        currentUser = { email: null, accessToken: null, chatroomId: null };
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('userEmail');
+        
+        document.getElementById('auth-section').style.display = 'block';
+        document.getElementById('user-section').style.display = 'none';
+        document.getElementById('welcome-screen').style.display = 'flex';
+        document.getElementById('chat-container').style.display = 'none';
+        
+        document.getElementById('auth-email').value = '';
+        document.getElementById('auth-password').value = '';
+        clearAuthMessage();
+    }
+
+    function showUserInterface() {
+        document.getElementById('auth-section').style.display = 'none';
+        document.getElementById('user-section').style.display = 'block';
+        document.getElementById('welcome-screen').style.display = 'none';
+        document.getElementById('chat-container').style.display = 'flex';
+        
+        document.getElementById('user-email').textContent = currentUser.email;
+        loadChatrooms();
+    }
+
+    async function handleUpload() {
+        const files = document.getElementById('file-upload').files;
+        if (!files || files.length === 0) {
+            document.getElementById('upload-status').innerHTML = '<div class="error">Please select files to upload</div>';
+            return;
+        }
+        
+        const formData = new FormData();
+        for (let file of files) {
+            formData.append('files', file);
+        }
+        
+        try {
+            document.getElementById('upload-status').innerHTML = '<div>Uploading files...</div>';
+            
+            const response = await fetch(`${BACKEND_URL}/upload`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${currentUser.accessToken}`,
+                    'ngrok-skip-browser-warning': 'true'
+                },
+                body: formData
+            });
+            
+            if (response.status === 401) {
+                logout();
                 return;
             }
             
-            const formData = new FormData();
-            for (let file of files) {
-                formData.append('files', file);
-            }
+            const data = await response.json();
             
-            try {
-                document.getElementById('upload-status').innerHTML = '<div>Uploading files...</div>';
-                
-                const response = await fetch(`${BACKEND_URL}/upload`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${currentUser.accessToken}`,
-                        'ngrok-skip-browser-warning': 'true'
-                    },
-                    body: formData
-                });
-                
-                if (response.status === 401) {
-                    logout();
-                    return;
-                }
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    let statusHTML = `<div class="success">✅ ${data.message}</div>`;
-                    data.documents.forEach(doc => {
-                        if (doc.status === 'success') {
-                            statusHTML += `<div class="success">📄 ${doc.filename}: ${doc.chunks_count} chunks</div>`;
-                        } else {
-                            statusHTML += `<div class="error">❌ ${doc.filename}: ${doc.status}</div>`;
-                        }
-                    });
-                    document.getElementById('upload-status').innerHTML = statusHTML;
-                } else {
-                    document.getElementById('upload-status').innerHTML = `<div class="error">Upload failed: ${data.detail || response.statusText}</div>`;
-                }
-            } catch (error) {
-                document.getElementById('upload-status').innerHTML = `<div class="error">Upload error: ${error.message}</div>`;
-            }
-            
-            // Clear file input
-            document.getElementById('file-upload').value = '';
-        }
-
-        async function loadChatrooms() {
-            try {
-                const response = await fetch(`${BACKEND_URL}/chatrooms/${currentUser.email}`, {
-                    headers: {
-                        'Authorization': `Bearer ${currentUser.accessToken}`,
-                        'ngrok-skip-browser-warning': 'true'
+            if (response.ok) {
+                let statusHTML = `<div class="success">✅ ${data.message}</div>`;
+                data.documents.forEach(doc => {
+                    if (doc.status === 'success') {
+                        statusHTML += `<div class="success">📄 ${doc.filename}: ${doc.chunks_count} chunks</div>`;
+                    } else {
+                        statusHTML += `<div class="error">❌ ${doc.filename}: ${doc.status}</div>`;
                     }
                 });
-                
-                if (response.status === 401) {
-                    logout();
-                    return;
-                }
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    const chatrooms = data.chatrooms || [];
-                    const chatroomsList = document.getElementById('chatrooms-list');
-                    chatroomsList.innerHTML = '';
-                    
-                    chatrooms.forEach(([id, createdAt]) => {
-                        const chatroomDiv = document.createElement('div');
-                        chatroomDiv.className = 'chatroom-item';
-                        chatroomDiv.textContent = `Chatroom ${id}`;
-                        chatroomDiv.addEventListener('click', () => selectChatroom(id));
-                        
-                        if (id === currentUser.chatroomId) {
-                            chatroomDiv.classList.add('active');
-                        }
-                        
-                        chatroomsList.appendChild(chatroomDiv);
-                    });
-                    
-                    // Select first chatroom if none selected
-                    if (chatrooms.length > 0 && !currentUser.chatroomId) {
-                        selectChatroom(chatrooms[0][0]);
-                    }
-                }
-            } catch (error) {
-                console.error('Failed to load chatrooms:', error);
+                document.getElementById('upload-status').innerHTML = statusHTML;
+            } else {
+                document.getElementById('upload-status').innerHTML = `<div class="error">Upload failed: ${data.detail || response.statusText}</div>`;
             }
+        } catch (error) {
+            document.getElementById('upload-status').innerHTML = `<div class="error">Upload error: ${error.message}</div>`;
         }
+        
+        document.getElementById('file-upload').value = '';
+    }
 
-        async function createNewChatroom() {
-            try {
-                const response = await fetch(`${BACKEND_URL}/new_chatroom/${currentUser.email}`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${currentUser.accessToken}`,
-                        'ngrok-skip-browser-warning': 'true'
-                    }
-                });
-                
-                if (response.status === 401) {
-                    logout();
-                    return;
-                }
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    currentUser.chatroomId = data.chatroom_id;
-                    loadChatrooms();
-                    loadMessages();
-                }
-            } catch (error) {
-                console.error('Failed to create chatroom:', error);
-            }
-        }
-
-        function selectChatroom(chatroomId) {
-            currentUser.chatroomId = chatroomId;
-            
-            // Update active chatroom in UI
-            document.querySelectorAll('.chatroom-item').forEach(item => {
-                item.classList.remove('active');
-                if (item.textContent === `Chatroom ${chatroomId}`) {
-                    item.classList.add('active');
+    async function loadChatrooms() {
+        try {
+            const response = await fetch(`${BACKEND_URL}/chatrooms/${currentUser.email}`, {
+                headers: {
+                    'Authorization': `Bearer ${currentUser.accessToken}`,
+                    'ngrok-skip-browser-warning': 'true'
                 }
             });
             
-            document.getElementById('chat-title').textContent = `Chat - Chatroom #${chatroomId}`;
-            loadMessages();
-        }
-
-        async function loadMessages() {
-            if (!currentUser.chatroomId) return;
+            if (response.status === 401) {
+                logout();
+                return;
+            }
             
-            try {
-                const response = await fetch(`${BACKEND_URL}/messages/${currentUser.chatroomId}`, {
-                    headers: {
-                        'Authorization': `Bearer ${currentUser.accessToken}`,
-                        'ngrok-skip-browser-warning': 'true'
+            const data = await response.json();
+            
+            if (response.ok) {
+                const chatrooms = data.chatrooms || [];
+                const chatroomsList = document.getElementById('chatrooms-list');
+                chatroomsList.innerHTML = '';
+                
+                chatrooms.forEach(([id, createdAt]) => {
+                    const chatroomDiv = document.createElement('div');
+                    chatroomDiv.className = 'chatroom-item';
+                    chatroomDiv.textContent = `Chatroom ${id}`;
+                    chatroomDiv.addEventListener('click', () => selectChatroom(id));
+                    
+                    if (id === currentUser.chatroomId) {
+                        chatroomDiv.classList.add('active');
+                    }
+                    
+                    chatroomsList.appendChild(chatroomDiv);
+                });
+                
+                if (chatrooms.length > 0 && !currentUser.chatroomId) {
+                    selectChatroom(chatrooms[0][0]);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to load chatrooms:', error);
+        }
+    }
+
+    async function createNewChatroom() {
+        try {
+            const response = await fetch(`${BACKEND_URL}/new_chatroom/${currentUser.email}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${currentUser.accessToken}`,
+                    'ngrok-skip-browser-warning': 'true'
+                }
+            });
+            
+            if (response.status === 401) {
+                logout();
+                return;
+            }
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                currentUser.chatroomId = data.chatroom_id;
+                loadChatrooms();
+                loadMessages();
+            }
+        } catch (error) {
+            console.error('Failed to create chatroom:', error);
+        }
+    }
+
+    function selectChatroom(chatroomId) {
+        currentUser.chatroomId = chatroomId;
+        
+        document.querySelectorAll('.chatroom-item').forEach(item => {
+            item.classList.remove('active');
+            if (item.textContent === `Chatroom ${chatroomId}`) {
+                item.classList.add('active');
+            }
+        });
+        
+        document.getElementById('chat-title').textContent = `Chat - Chatroom #${chatroomId}`;
+        loadMessages();
+    }
+
+    async function loadMessages() {
+        if (!currentUser.chatroomId) return;
+        
+        try {
+            const response = await fetch(`${BACKEND_URL}/messages/${currentUser.chatroomId}`, {
+                headers: {
+                    'Authorization': `Bearer ${currentUser.accessToken}`,
+                    'ngrok-skip-browser-warning': 'true'
+                }
+            });
+            
+            if (response.status === 401) {
+                logout();
+                return;
+            }
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                const messages = data.messages || [];
+                const messagesContainer = document.getElementById('messages-container');
+                messagesContainer.innerHTML = '';
+                
+                messages.forEach(([userMessage, aiResponse]) => {
+                    if (userMessage) {
+                        addMessage(userMessage, 'user');
+                    }
+                    if (aiResponse) {
+                        addMessage(aiResponse, 'assistant');
                     }
                 });
                 
-                if (response.status === 401) {
-                    logout();
-                    return;
-                }
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    const messages = data.messages || [];
-                    const messagesContainer = document.getElementById('messages-container');
-                    messagesContainer.innerHTML = '';
-                    
-                    messages.forEach(([userMessage, aiResponse]) => {
-                        if (userMessage) {
-                            addMessage(userMessage, 'user');
-                        }
-                        if (aiResponse) {
-                            addMessage(aiResponse, 'assistant');
-                        }
-                    });
-                    
-                    scrollToBottom();
-                }
-            } catch (error) {
-                console.error('Failed to load messages:', error);
+                scrollToBottom();
             }
+        } catch (error) {
+            console.error('Failed to load messages:', error);
         }
+    }
 
-        function addMessage(content, type, showPrescriptionAlert = false) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}-message`;
-            
-            const label = document.createElement('div');
-            label.className = 'message-label';
-            label.textContent = type === 'user' ? 'You' : 'Assistant';
-            
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            contentDiv.textContent = content;
-            
-            messageDiv.appendChild(label);
-            messageDiv.appendChild(contentDiv);
-            
-            if (showPrescriptionAlert) {
-                const alertDiv = document.createElement('div');
-                alertDiv.className = 'prescription-alert';
-                alertDiv.textContent = 'Prescription sent to your email.';
-                messageDiv.appendChild(alertDiv);
-            }
-            
-            document.getElementById('messages-container').appendChild(messageDiv);
-            scrollToBottom();
-
-           
-            return contentDiv;
+    function addMessage(content, type, showPrescriptionAlert = false) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}-message`;
+        
+        const label = document.createElement('div');
+        label.className = 'message-label';
+        label.textContent = type === 'user' ? 'You' : 'Assistant';
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.textContent = content;
+        
+        messageDiv.appendChild(label);
+        messageDiv.appendChild(contentDiv);
+        
+        if (showPrescriptionAlert) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'prescription-alert';
+            alertDiv.textContent = 'Prescription sent to your email.';
+            messageDiv.appendChild(alertDiv);
         }
+        
+        document.getElementById('messages-container').appendChild(messageDiv);
+        scrollToBottom();
+       
+        return contentDiv;
+    }
 
-        function scrollToBottom() {
-            const container = document.getElementById('messages-container');
-            container.scrollTop = container.scrollHeight;
-        }
+    function scrollToBottom() {
+        const container = document.getElementById('messages-container');
+        container.scrollTop = container.scrollHeight;
+    }
 
-        async function sendMessage() {
+    async function sendMessage() {
         const message = document.getElementById('chat-input').value.trim();
         if (!message || !currentUser.chatroomId) return;
 
-        // Disable input while sending
         const chatInput = document.getElementById('chat-input');
         const sendBtn = document.getElementById('send-btn');
 
@@ -797,13 +858,10 @@
         sendBtn.disabled = true;
         sendBtn.innerHTML = '<div class="loading"></div>';
 
-        // Add user message immediately
         addMessage(message, 'user');
         chatInput.value = '';
 
         try {
-            console.log('Sending request...');
-
             const response = await fetch(`${BACKEND_URL}/query`, {
                 method: 'POST',
                 headers: {
@@ -829,12 +887,29 @@
                 return;
             }
 
-            // Streaming setup
+            const sourcesHeader = response.headers.get('X-Sources');
+            console.log("Raw X-Sources header:", sourcesHeader);
+            let sources = [];
+            if (sourcesHeader) {
+                try {
+                    sources = JSON.parse(sourcesHeader);
+                    for (const s of sources) {
+                        const cs = s.complete_source || {};
+                        ['asset_uri', 'video_url', 'image_url', 'pdf_url', 'csv_url'].forEach(key => {
+                            if (cs[key] && !cs[key].startsWith("http")) {
+                                cs[key] = normalizeUrl(cs[key]);
+                            }
+                        });
+                    }
+                } catch (err) {
+                    console.warn("Failed to parse X-Sources header", err);
+                }
+            }
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullResponse = '';
 
-            // Create initial empty message element
             let messageElement = addMessage('', 'assistant');
 
             while (true) {
@@ -842,25 +917,7 @@
                 if (done) break;
 
                 let chunk = decoder.decode(value, { stream: true });
-                console.log("Received chunk:", chunk);
 
-                // 🔑 Your backend sends structured events. We need to extract AI text only.
-                try {
-                    // If chunk looks like a JSON object with agent message
-                    if (chunk.includes('"content"')) {
-                        const jsonMatch = chunk.match(/\{.*\}/s);
-                        if (jsonMatch) {
-                            const parsed = JSON.parse(jsonMatch[0]);
-                            if (parsed?.agent?.messages?.[0]?.content) {
-                                chunk = parsed.agent.messages[0].content;
-                            }
-                        }
-                    }
-                } catch (err) {
-                    console.warn("JSON parse failed, using raw chunk");
-                }
-
-                // Special case for email event
                 if (chunk.includes('Email sent successfully')) {
                     chunk = "I've sent the information to your email address.";
                 }
@@ -872,7 +929,45 @@
                 }
             }
 
-            console.log('Final response:', fullResponse);
+            let topSource = null;
+
+const docRefMatch = fullResponse.match(/Doc\s+(\d+)\s*\[([^\]]+)\]/);
+
+if (docRefMatch) {
+    let docLabel = docRefMatch[2];
+    
+    // Strip off any trailing "(...)" time markers
+    docLabel = docLabel.replace(/\s*\([^)]*\)$/, "").trim();
+
+    // Find match in sources (case-insensitive, partial match)
+    topSource = sources.find(s =>
+        (s.metadata?.source || s.complete_source?.source || "")
+            .toLowerCase()
+            .includes(docLabel.toLowerCase())
+    ) || null;
+}
+
+// Fallback to first source if no match
+if (!topSource && sources.length > 0) {
+    topSource = sources[0];
+}
+
+// 🛑 Skip if there's only 1 trivial source
+if (sources.length === 1) {
+    console.log("Only one trivial source found — skipping display");
+    topSource = null;
+}
+
+console.log("Top source selected:", topSource);
+sourceDisplayManager.displaySources(topSource ? [topSource] : []);
+
+
+console.log("Top source selected:", topSource);
+sourceDisplayManager.displaySources(topSource ? [topSource] : []);
+
+
+console.log("Top source selected:", topSource);
+sourceDisplayManager.displaySources(topSource ? [topSource] : []);
 
         } catch (error) {
             console.error('Error:', error);
@@ -885,6 +980,556 @@
         }
     }
 
-    </script>
+    
+    class SourceDisplayManager {
+        constructor() {
+            this.sourcesContainer = document.getElementById('sources-container');
+        }
+
+        displaySources(sources) {
+            console.log(sources, "sssss")
+            if (!sources || sources.length === 0) {
+                this.sourcesContainer.style.display = 'none';
+                this.sourcesContainer.innerHTML = '';
+                return;
+            }
+
+            this.sourcesContainer.style.display = 'block';
+            this.sourcesContainer.innerHTML = '<h2>📚 Source Documents</h2>';
+
+            sources.forEach((source, index) => {
+                const sourceElement = this.createSourceDisplay(source, index);
+                this.sourcesContainer.appendChild(sourceElement);
+            });
+        }
+
+        createSourceDisplay(source, index) {
+            const container = document.createElement('div');
+            container.className = 'source-container';
+            container.style.marginBottom = '20px';
+            container.style.padding = '15px';
+            container.style.border = '1px solid #e0e0e0';
+            container.style.borderRadius = '8px';
+            container.style.background = '#f9f9f9';
+
+            const display = source.display || {};
+            const cs = source.complete_source || {};
+            const meta = source.metadata || {};
+            const title = cs.source || meta.source || `Source ${index + 1}`;
+
+            const dtype = display.type;
+
+            if (dtype === "video_player" || (cs.video_url && cs.video_url.toLowerCase().endsWith((".mp4", ".mov", ".webm")))) {
+                container.appendChild(this.createVideoDisplay(source, title, index));
+            } else if (dtype === "pdf_page" || (cs.pdf_url || (cs.asset_uri && cs.asset_uri.toLowerCase().endsWith(".pdf")))) {
+                container.appendChild(this.createPdfDisplay(source, title));
+            } else if (dtype === "csv" || (cs.csv_url || (cs.asset_uri && cs.asset_uri.toLowerCase().endsWith(".csv")))) {
+                container.appendChild(this.createCsvDisplay(source, title));
+            } else if (dtype === "docx_paragraph") {
+                container.appendChild(this.createDocxDisplay(source, title));
+            } else if (dtype === "image_viewer" || (cs.image_url || (cs.asset_uri && cs.asset_uri.toLowerCase().endsWith((".png", ".jpg", ".jpeg", ".gif"))))) {
+                container.appendChild(this.createImageDisplay(source, title));
+            } else {
+                container.appendChild(this.createDefaultDisplay(source, title));
+            }
+
+            return container;
+        }
+
+        createVideoDisplay(source, title, index) {
+            const videoDiv = document.createElement('div');
+            const cs = source.complete_source || {};
+            const display = source.display || {};
+            const start = display.start_time || cs.start || 0;
+            const end = display.end_time || cs.end || 0;
+            const transcript = cs.transcript || source.search_chunk || '';
+            const url = normalizeUrl(cs.video_url || cs.asset_uri);
+            const key = `vid_${index}`;
+
+            const header = document.createElement('h3');
+            header.textContent = `🎥 Video Source: ${title}`;
+            videoDiv.appendChild(header);
+
+            const videoHtml = `
+                <video id="${key}" width="100%" height="400" controls preload="metadata" playsinline>
+                    <source src="${url}#t=${start},${end}" type="video/mp4">
+                    Your browser does not support the video tag.
+                </video>
+                <script>
+                    (function() {
+                        const v = document.getElementById("${key}");
+                        const START = ${start};
+                        const END = ${end};
+                        const NUDGE = 0.001;
+
+                        function clamp() {
+                            if (v.currentTime < START) v.currentTime = START;
+                            if (v.currentTime >= END) {
+                                v.pause();
+                                v.currentTime = START;
+                            }
+                        }
+
+                        function seekToStart() {
+                            try { v.currentTime = START + NUDGE; } catch (e) {}
+                        }
+
+                        v.addEventListener("loadedmetadata", seekToStart, { once: true });
+                        v.addEventListener("canplay", seekToStart, { once: true });
+                        v.addEventListener("loadeddata", seekToStart, { once: true });
+                        v.addEventListener("timeupdate", clamp);
+                        v.addEventListener("seeking", function() {
+                            if (v.currentTime < START) v.currentTime = START;
+                            if (v.currentTime > END) v.currentTime = END - NUDGE;
+                        });
+                    })();
+                <\/script>
+            `;
+
+            videoDiv.innerHTML += videoHtml;
+
+            if (transcript) {
+                const caption = document.createElement('p');
+                caption.textContent = `📝 Transcript: ${transcript}`;
+                caption.style.fontStyle = 'italic';
+                videoDiv.appendChild(caption);
+            }
+
+            return videoDiv;
+        }
+        
+        createPdfDisplay(source, title) {
+            const pdfDiv = document.createElement('div');
+            const cs = source.complete_source || {};
+            const meta = source.metadata || {};
+            const pageNumber = cs.page_number || meta.page || 1;
+            const fullText = cs.full_text || meta.full_text || '';
+            const rawUrl = cs.pdf_url || cs.asset_uri;
+            const pdfUrl = rawUrl ? encodeURI(normalizeUrl(rawUrl)) : "";
+
+            // Header
+            const header = document.createElement('h3');
+            header.textContent = `📄 PDF Source: ${title}`;
+            pdfDiv.appendChild(header);
+
+            const pageInfo = document.createElement('p');
+            pageInfo.innerHTML = `<strong>Page ${pageNumber+1}</strong>`;
+            pdfDiv.appendChild(pageInfo);
+
+            // PDF canvas container
+            const canvasContainer = document.createElement('div');
+            canvasContainer.style.border = '1px solid #ccc';
+            canvasContainer.style.marginBottom = '10px';
+
+            const canvas = document.createElement('canvas');
+            canvas.style.width = '100%';
+            canvas.style.maxHeight = '800px';
+            canvas.id = `pdf-canvas-${Date.now()}`;
+            canvasContainer.appendChild(canvas);
+            pdfDiv.appendChild(canvasContainer);
+
+            // Render PDF
+            this.loadPdfPage(pdfUrl, pageNumber, canvas);
+
+            // Optional: add extracted text
+            if (fullText.trim()) {
+                const details = document.createElement('details');
+                const summary = document.createElement('summary');
+                summary.textContent = '📄 Page Text (for copying)';
+                summary.style.cursor = 'pointer';
+                summary.style.fontWeight = 'bold';
+                details.appendChild(summary);
+
+                const textarea = document.createElement('textarea');
+                textarea.value = fullText;
+                textarea.style.width = '100%';
+                textarea.style.height = '200px';
+                textarea.style.fontFamily = 'monospace';
+                textarea.readOnly = true;
+                details.appendChild(textarea);
+
+                pdfDiv.appendChild(details);
+            }
+
+            return pdfDiv;
+        }
+
+        
+        async loadPdfPage(pdfUrl, pageNumber, canvas) {
+            try {
+                // Ensure pdf.js is loaded once
+                if (!window.pdfjsLib) {
+                    await new Promise(resolve => {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+                        script.onload = () => {
+                            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+                                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                            resolve();
+                        };
+                        document.head.appendChild(script);
+                    });
+                }
+
+                const pdf = await window.pdfjsLib.getDocument(pdfUrl).promise;
+                const page = await pdf.getPage(pageNumber+1);
+
+                const viewport = page.getViewport({ scale: 1.5 });
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                const ctx = canvas.getContext('2d');
+
+                await page.render({ canvasContext: ctx, viewport }).promise;
+                console.log(`[PDF] Rendered ${pdfUrl} page ${pageNumber}`);
+            } catch (error) {
+                console.error('[PDF] Rendering failed:', error, 'url:', pdfUrl);
+                const errorMsg = document.createElement('div');
+                errorMsg.textContent = "⚠️ Failed to render PDF page.";
+                errorMsg.style.color = 'red';
+                canvas.parentElement.replaceWith(errorMsg);
+            }
+        }
+        createCsvDisplay(source, title) {
+            const csvDiv = document.createElement('div');
+            const cs = source.complete_source || {};
+            const meta = source.metadata || {};
+            const rowNumber = cs.row_number || meta.row_number || 'N/A';
+            const csvUrl = normalizeUrl(cs.csv_url || cs.asset_uri);
+
+            const header = document.createElement('h3');
+            header.textContent = `📊 ${title}`;
+            csvDiv.appendChild(header);
+
+            const fileInfo = document.createElement('p');
+            fileInfo.innerHTML = `<strong>File:</strong> ${csvUrl.split('/').pop()} | <strong>Row ${rowNumber}</strong>`;
+            csvDiv.appendChild(fileInfo);
+
+            // Load and display the specific CSV row
+            this.loadCsvRow(csvUrl, rowNumber, csvDiv);
+
+            return csvDiv;
+        }
+
+
+        async loadCsvRow(csvUrl, rowNumber, container) {
+            try {
+                const response = await fetch(csvUrl, {
+                    headers: { 'ngrok-skip-browser-warning': 'true' }
+                });
+                const csvText = await response.text();
+                
+                // Parse CSV (simple parser - you might want to use a library like PapaParse)
+                const lines = csvText.split('\n').filter(line => line.trim());
+                const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+                
+                if (rowNumber > 0 && rowNumber < lines.length) {
+                    const rowData = lines[rowNumber].split(',').map(cell => cell.trim().replace(/"/g, ''));
+                    
+                    const table = document.createElement('table');
+                    table.style.width = '100%';
+                    table.style.borderCollapse = 'collapse';
+                    table.style.marginTop = '10px';
+                    
+                    // Create single row table with headers and data
+                    const tbody = document.createElement('tbody');
+                    headers.forEach((header, index) => {
+                        const tr = document.createElement('tr');
+                        
+                        const th = document.createElement('th');
+                        th.textContent = header;
+                        th.style.border = '1px solid #ddd';
+                        th.style.padding = '8px';
+                        th.style.backgroundColor = '#f2f2f2';
+                        tr.appendChild(th);
+                        
+                        const td = document.createElement('td');
+                        td.textContent = rowData[index] || '';
+                        td.style.border = '1px solid #ddd';
+                        td.style.padding = '8px';
+                        tr.appendChild(td);
+                        
+                        tbody.appendChild(tr);
+                    });
+                    
+                    table.appendChild(tbody);
+                    container.appendChild(table);
+                }
+            } catch (error) {
+                console.error('CSV loading error:', error);
+                const errorDiv = document.createElement('div');
+                errorDiv.textContent = `Error loading CSV: ${error.message}`;
+                errorDiv.style.color = 'red';
+                container.appendChild(errorDiv);
+            }
+        }
+
+        createDocxDisplay(source, title) {
+            const docxDiv = document.createElement('div');
+            const cs = source.complete_source || {};
+            const meta = source.metadata || {};
+            const paragraphIndex = cs.paragraph_index || meta.paragraph_index;
+            const fullText = cs.full_text || meta.full_text || source.search_chunk || '';
+            const docxUrl = normalizeUrl(cs.docx_url || cs.asset_uri);
+
+            const header = document.createElement('h3');
+            header.textContent = `📝 DOCX Source: ${title}`;
+            docxDiv.appendChild(header);
+
+            if (paragraphIndex) {
+                const paraInfo = document.createElement('p');
+                paraInfo.innerHTML = `<strong>Paragraph ${paragraphIndex}</strong>`;
+                docxDiv.appendChild(paraInfo);
+            }
+
+            // Create document preview container
+            const previewContainer = document.createElement('div');
+            previewContainer.style.border = '1px solid #ccc';
+            previewContainer.style.padding = '15px';
+            previewContainer.style.backgroundColor = 'white';
+            previewContainer.style.borderRadius = '4px';
+            previewContainer.style.marginBottom = '10px';
+            previewContainer.style.minHeight = '400px';
+
+            // Try to render DOCX content or show as formatted text
+            this.loadDocxContent(docxUrl, fullText, paragraphIndex, previewContainer);
+            
+            docxDiv.appendChild(previewContainer);
+
+            return docxDiv;
+        }
+
+        async loadDocxContent(docxUrl, fullText, highlightParagraph, container) {
+            try {
+                // For now, display formatted text content
+                // You could integrate mammoth.js here for proper DOCX rendering
+                const paragraphs = fullText.split('\n\n').filter(p => p.trim());
+                
+                paragraphs.forEach((paragraph, index) => {
+                    const p = document.createElement('p');
+                    p.textContent = paragraph.trim();
+                    p.style.marginBottom = '15px';
+                    p.style.lineHeight = '1.6';
+                    
+                    // Highlight the specific paragraph if mentioned
+                    if (highlightParagraph && index + 1 === highlightParagraph) {
+                        p.style.backgroundColor = '#fff3cd';
+                        p.style.border = '2px solid #ffc107';
+                        p.style.borderRadius = '4px';
+                        p.style.padding = '10px';
+                    }
+                    
+                    container.appendChild(p);
+                });
+
+                // Add download link
+                const downloadLink = document.createElement('a');
+                downloadLink.href = docxUrl;
+                downloadLink.textContent = '[📎 Download DOCX File]';
+                downloadLink.style.display = 'block';
+                downloadLink.style.marginTop = '10px';
+                downloadLink.target = '_blank';
+                container.appendChild(downloadLink);
+                
+            } catch (error) {
+                console.error('DOCX loading error:', error);
+                container.innerHTML = `
+                    <p>Document content:</p>
+                    <pre style="white-space: pre-wrap; background: #f8f9fa; padding: 15px; border-radius: 4px;">${fullText}</pre>
+                    <a href="${docxUrl}" target="_blank">[📎 View File]</a>
+                `;
+            }
+        }
+        createVideoDisplay(source, title, index) {
+            const videoDiv = document.createElement('div');
+            const cs = source.complete_source || {};
+            const display = source.display || {};
+            const start = parseFloat(display.start_time || cs.start || 0);
+            const end = parseFloat(display.end_time || cs.end || 0);
+            const transcript = cs.transcript || source.search_chunk || '';
+            const url = normalizeUrl(cs.video_url || cs.asset_uri);
+            const uniqueId = `vid_${Date.now()}_${index}`;
+
+            const header = document.createElement('h3');
+            header.textContent = `🎥 Video Source: ${title}`;
+            videoDiv.appendChild(header);
+
+            // Create video element with precise controls
+            const video = document.createElement('video');
+            video.id = uniqueId;
+            video.controls = true;
+            video.preload = 'metadata';
+            video.style.width = '100%';
+            video.style.height = '400px';
+            video.style.backgroundColor = '#000';
+            
+            const source_elem = document.createElement('source');
+            source_elem.src = `${url}#t=${start},${end}`;
+            source_elem.type = 'video/mp4';
+            video.appendChild(source_elem);
+
+            videoDiv.appendChild(video);
+
+            // Add time segment info
+            const timeInfo = document.createElement('p');
+            timeInfo.innerHTML = `<strong>Segment:</strong> ${this.formatTime(start)} - ${this.formatTime(end)}`;
+            timeInfo.style.fontSize = '14px';
+            timeInfo.style.color = '#666';
+            videoDiv.appendChild(timeInfo);
+
+            // Apply time constraints after video loads
+            setTimeout(() => {
+                const videoEl = document.getElementById(uniqueId);
+                if (videoEl) {
+                    this.applyVideoConstraints(videoEl, start, end);
+                }
+            }, 100);
+
+            // Add transcript if available
+            if (transcript.trim()) {
+                const transcriptDiv = document.createElement('div');
+                transcriptDiv.style.marginTop = '10px';
+                transcriptDiv.style.padding = '10px';
+                transcriptDiv.style.backgroundColor = '#f8f9fa';
+                transcriptDiv.style.borderRadius = '4px';
+                transcriptDiv.innerHTML = `<strong>📝 Transcript:</strong> ${transcript}`;
+                videoDiv.appendChild(transcriptDiv);
+            }
+
+            return videoDiv;
+        }
+
+        // Add these helper methods to SourceDisplayManager
+        applyVideoConstraints(video, startTime, endTime) {
+            const NUDGE = 0.001;
+            
+            function clamp() {
+                if (video.currentTime < startTime) {
+                    video.currentTime = startTime;
+                }
+                if (video.currentTime >= endTime && endTime > startTime) {
+                    video.pause();
+                    video.currentTime = startTime;
+                }
+            }
+            
+            function seekToStart() {
+                try {
+                    video.currentTime = startTime + NUDGE;
+                } catch (e) {
+                    console.warn('Could not seek to start time:', e);
+                }
+            }
+            
+            video.addEventListener("loadedmetadata", seekToStart, { once: true });
+            video.addEventListener("canplay", seekToStart, { once: true });
+            video.addEventListener("loadeddata", seekToStart, { once: true });
+            video.addEventListener("timeupdate", clamp);
+            
+            video.addEventListener("seeking", function() {
+                if (video.currentTime < startTime) {
+                    video.currentTime = startTime;
+                }
+                if (video.currentTime > endTime && endTime > startTime) {
+                    video.currentTime = endTime - NUDGE;
+                }
+            });
+        }
+
+        formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+
+        createImageDisplay(source, title) {
+            const imgDiv = document.createElement('div');
+            const cs = source.complete_source || {};
+            const meta = source.metadata || {};
+            const ocrText = cs.full_text || meta.full_text || source.search_chunk || '';
+            const url = normalizeUrl(cs.image_url || cs.asset_uri);
+
+            const header = document.createElement('h3');
+            header.textContent = `🖼️ Image Source: ${title}`;
+            imgDiv.appendChild(header);
+
+            const img = document.createElement('img');
+            img.src = url;
+            img.style.width = '100%';
+            img.style.maxHeight = '600px';
+            img.style.objectFit = 'contain';
+            img.style.border = '1px solid #ddd';
+            img.style.borderRadius = '4px';
+            img.alt = title;
+            
+            // Add loading placeholder
+            img.onload = () => {
+                img.style.border = '1px solid #28a745';
+            };
+            
+            img.onerror = () => {
+                img.style.border = '1px solid #dc3545';
+                img.alt = 'Failed to load image';
+            };
+            
+            imgDiv.appendChild(img);
+
+            // Enhanced OCR text display
+            if (ocrText.trim()) {
+                const details = document.createElement('details');
+                details.style.marginTop = '15px';
+                
+                const summary = document.createElement('summary');
+                summary.textContent = '🔍 OCR Text';
+                summary.style.cursor = 'pointer';
+                summary.style.fontWeight = 'bold';
+                summary.style.padding = '10px';
+                summary.style.backgroundColor = '#f8f9fa';
+                summary.style.borderRadius = '4px';
+                details.appendChild(summary);
+                
+                const textarea = document.createElement('textarea');
+                textarea.value = ocrText;
+                textarea.style.width = '100%';
+                textarea.style.height = '200px';
+                textarea.style.marginTop = '10px';
+                textarea.style.fontFamily = 'monospace';
+                textarea.style.fontSize = '12px';
+                textarea.style.border = '1px solid #ccc';
+                textarea.style.borderRadius = '4px';
+                textarea.style.padding = '8px';
+                textarea.readOnly = true;
+                details.appendChild(textarea);
+                
+                imgDiv.appendChild(details);
+            }
+
+            return imgDiv;
+        }
+
+        createDefaultDisplay(source, title) {
+            const div = document.createElement('div');
+            const header = document.createElement('h3');
+            header.textContent = `📄 ${title}`;
+            div.appendChild(header);
+
+            const content = document.createElement('p');
+            content.textContent = source.search_chunk || '';
+            div.appendChild(content);
+
+            const cs = source.complete_source || {};
+            if (cs.asset_uri) {
+                const link = document.createElement('a');
+                link.href = normalizeUrl(cs.asset_uri);
+                link.textContent = '[📎 View File]';
+                div.appendChild(link);
+            }
+
+            return div;
+        }
+    }
+
+    const sourceDisplayManager = new SourceDisplayManager();
+</script>
 </body>
 </html>
