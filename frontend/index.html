@@ -1221,7 +1221,6 @@ sourceDisplayManager.displaySources(topSource ? [topSource] : []);
             return pdfDiv;
         }
 
-        
         async loadPdfPage(pdfUrl, pageNumber, canvas) {
             try {
                 // Ensure pdf.js is loaded once
@@ -1238,8 +1237,35 @@ sourceDisplayManager.displaySources(topSource ? [topSource] : []);
                     });
                 }
 
-                const pdf = await window.pdfjsLib.getDocument(pdfUrl).promise;
-                const page = await pdf.getPage(pageNumber+1);
+                // Check if URL is ngrok and create custom fetch function
+                const isNgrok = pdfUrl.includes('.ngrok-free.app') || pdfUrl.includes('.ngrok.io');
+                
+                let loadingTask;
+                if (isNgrok) {
+                    // For ngrok URLs, use custom fetch with headers
+                    const fetchWithHeaders = async (url, options = {}) => {
+                        return fetch(url, {
+                            ...options,
+                            headers: {
+                                'ngrok-skip-browser-warning': 'true',
+                                ...options.headers
+                            }
+                        });
+                    };
+                    
+                    loadingTask = window.pdfjsLib.getDocument({
+                        url: pdfUrl,
+                        httpHeaders: {
+                            'ngrok-skip-browser-warning': 'true'
+                        }
+                    });
+                } else {
+                    // For regular URLs, use standard loading
+                    loadingTask = window.pdfjsLib.getDocument(pdfUrl);
+                }
+
+                const pdf = await loadingTask.promise;
+                const page = await pdf.getPage(pageNumber + 1);
 
                 const viewport = page.getViewport({ scale: 1.5 });
                 canvas.width = viewport.width;
@@ -1250,9 +1276,46 @@ sourceDisplayManager.displaySources(topSource ? [topSource] : []);
                 console.log(`[PDF] Rendered ${pdfUrl} page ${pageNumber}`);
             } catch (error) {
                 console.error('[PDF] Rendering failed:', error, 'url:', pdfUrl);
+                
+                // Try alternative approach for ngrok URLs
+                if (pdfUrl.includes('.ngrok-free.app') || pdfUrl.includes('.ngrok.io')) {
+                    console.log('[PDF] Attempting ngrok workaround...');
+                    try {
+                        const response = await fetch(pdfUrl, {
+                            headers: {
+                                'ngrok-skip-browser-warning': 'true'
+                            }
+                        });
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        
+                        const arrayBuffer = await response.arrayBuffer();
+                        const pdf = await window.pdfjsLib.getDocument(arrayBuffer).promise;
+                        const page = await pdf.getPage(pageNumber + 1);
+                        
+                        const viewport = page.getViewport({ scale: 1.5 });
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        const ctx = canvas.getContext('2d');
+                        
+                        await page.render({ canvasContext: ctx, viewport }).promise;
+                        console.log(`[PDF] Successfully rendered with ngrok workaround: ${pdfUrl} page ${pageNumber}`);
+                        return;
+                    } catch (workaroundError) {
+                        console.error('[PDF] Ngrok workaround also failed:', workaroundError);
+                    }
+                }
+                
                 const errorMsg = document.createElement('div');
-                errorMsg.textContent = "⚠️ Failed to render PDF page.";
-                errorMsg.style.color = 'red';
+                errorMsg.innerHTML = `
+                    <div style="color: red; padding: 10px; border: 1px solid red; border-radius: 4px;">
+                        ⚠️ Failed to render PDF page.<br>
+                        <small>Error: ${error.message}</small>
+                        ${pdfUrl.includes('.ngrok-free.app') ? '<br><small>Note: Ngrok URLs may require special handling</small>' : ''}
+                    </div>
+                `;
                 canvas.parentElement.replaceWith(errorMsg);
             }
         }
